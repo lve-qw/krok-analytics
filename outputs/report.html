@@ -1,0 +1,116 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Analytics Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; }
+        h3 { border-bottom: 2px solid #333; padding-bottom: 10px; margin-top: 30px; }
+        .metrics { display: flex; flex-wrap: wrap; }
+        .metric-card { 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            margin: 10px; 
+            background: #fff;
+            min-width: 200px;
+        }
+        .metric-card h4 { margin: 0 0 10px 0; font-size: 14px; color: #666; }
+        .metric-card h3 { margin: 0; font-size: 24px; border: none; }
+        .metric-card small { color: #999; }
+        hr { margin-top: 40px; }
+        .footer { text-align: center; color: #999; }
+    </style>
+</head>
+<body>
+    <h1>Analytics Dashboard</h1>
+    
+    <h3>Общая статистика</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Диалогов</h4><h3>100</h3></div>
+        <div class="metric-card"><h4>Пользователей</h4><h3>24</h3></div>
+        <div class="metric-card"><h4>Период</h4><h3>2026-05-03 - 2026-07-30</h3></div>
+    </div>
+    
+    <h3>Токены и стоимость</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Всего токенов</h4><h3>10,536,403</h3></div>
+        <div class="metric-card"><h4>Среднее на диалог</h4><h3>105,364</h3></div>
+        <div class="metric-card"><h4>Burned tokens</h4><h3>0</h3><small>0.00% от общих</small></div>
+        <div class="metric-card"><h4>Стоимость ($)</h4><h3>$1.05</h3></div>
+    </div>
+    
+    <h3>Качество агента</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Полезные сообщения</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Бесполезные сообщения</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Useful ratio</h4><h3>0.0%</h3></div>
+        <div class="metric-card"><h4>Диалоги с ошибками</h4><h3>0</h3><small>Среднее burned: 0</small></div>
+    </div>
+    
+    <h3>Классификация</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Рабочие диалоги</h4><h3>0</h3><small>0.0%</small></div>
+        <div class="metric-card"><h4>Кандидаты на автоматизацию</h4><h3>0</h3><small>0.0%</small></div>
+    </div>
+    
+    <h3>Сложность</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Simple</h4><h3>100</h3></div>
+        <div class="metric-card"><h4>Medium</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Complex</h4><h3>0</h3></div>
+    </div>
+    
+    <h3>Периодичность</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>None</h4><h3>100</h3></div>
+        <div class="metric-card"><h4>Daily</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Weekly</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Monthly</h4><h3>0</h3></div>
+    </div>
+    
+    <h3>Интеграции и инструменты</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Диалоги с интеграциями</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Уникальные интеграции</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Уникальные инструменты</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Среднее tool calls</h4><h3>0.0</h3></div>
+    </div>
+    
+    <h3>Use Cases (кластеры)</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>В кластерах</h4><h3>100</h3></div>
+        <div class="metric-card"><h4>Выбросы (outliers)</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Средний размер кластера</h4><h3>23.0</h3></div>
+    </div>
+    <div style="padding: 15px; border: 1px solid #ddd; border-radius: 5px; margin: 10px;">
+        <h4>Топ-5 кластеров</h4>
+        <ul>
+            <li>Кластер 3: 35 диалогов</li><li>Кластер 1: 20 диалогов</li><li>Кластер 5: 20 диалогов</li><li>Кластер 0: 15 диалогов</li><li>Кластер 2: 5 диалогов</li>
+        </ul>
+    </div>
+    
+    <h3>Проблемы</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Провалы агента</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Промпт-инъекции</h4><h3>0</h3></div>
+        <div class="metric-card"><h4>Чувствительные данные</h4><h3>0</h3></div>
+    </div>
+    
+    <h3>Языки</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Russian</h4><h3>100</h3></div>
+        <div class="metric-card"><h4>English</h4><h3>0</h3></div>
+    </div>
+    
+    <h3>Уверенность классификации</h3>
+    <div class="metrics">
+        <div class="metric-card"><h4>Средняя confidence</h4><h3>0.000</h3></div>
+        <div class="metric-card"><h4>Низкая confidence (&lt;0.5)</h4><h3>100</h3></div>
+    </div>
+    
+    <hr>
+    <p class="footer">Generated from analytics.csv</p>
+</body>
+</html>
