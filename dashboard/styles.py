@@ -664,6 +664,30 @@ STYLESHEET += """
   text-transform: uppercase; color: var(--muted);
 }
 
+/* ---------- generated conclusions --------------------------------------- */
+
+/* The answer sits between the question and the charts, set larger than body
+   text and narrower than the page so it reads as a sentence rather than as a
+   caption. The copper rule is the same accent as the section kicker, which is
+   what marks the line as part of the heading and not as a note under it. */
+.insight {
+  margin: 9px 0 0;
+  padding-left: 13px;
+  border-left: 2px solid var(--copper);
+  max-width: 108ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.insight:empty { display: none; }
+.insight-footnote {
+  margin-top: 6px;
+  border-left-color: var(--border-strong);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
 /* ---------- export warnings -------------------------------------------- */
 
 .provenance-notes { display: flex; flex-direction: column; gap: 4px; }

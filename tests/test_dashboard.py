@@ -183,6 +183,77 @@ def test_kpis_on_an_empty_frame_do_not_raise(frame: pd.DataFrame):
     assert metrics.kpis(frame.iloc[0:0])[0].value == "0"
 
 
+# --- scenario map and generated conclusions -----------------------------
+
+
+def test_scenario_map_reports_scale_and_readiness(frame: pd.DataFrame):
+    table = metrics.scenario_map(frame)
+    assert table["cluster_id"].tolist() == [1]
+    row = table.iloc[0]
+    # Two of three dialogues sit in cluster 1, one of them is a candidate.
+    assert row["dialogs"] == 2
+    assert row["share"] == pytest.approx(200 / 3)
+    assert row["automation_share"] == pytest.approx(50.0)
+    assert row["simple_share"] == pytest.approx(50.0)
+    assert row["avg_tokens"] == pytest.approx(150.0)
+
+
+def test_scenario_map_ignores_outliers(frame: pd.DataFrame):
+    assert "r3" not in metrics.scenario_map(frame).get("label", pd.Series(dtype=str)).tolist()
+
+
+def test_tokens_by_scenario_is_ranked(tmp_path: Path):
+    rows = list(ROWS) + [
+        "r4,u3,2026-07-25T11:00:00Z,True,False,False,False,False,simple,none,ru,"
+        ",,0,0,5,5,0,1000,0.00,0,1,0,0.7,,Ещё,success,7,Крупный,1"
+    ]
+    frame = data.load(write_csv(tmp_path / "analytics.csv", rows)).frame
+    ranked = metrics.tokens_by_scenario(frame)
+    assert ranked["key"].tolist()[0] == "Крупный"
+    assert ranked["tokens"].tolist() == [1000, 300]
+
+
+def test_complexity_by_automation_splits_each_group(frame: pd.DataFrame):
+    table = metrics.complexity_by_automation(frame)
+    rows = {row.key: (row.candidates, row.rest) for row in table.itertuples()}
+    assert rows["simple"] == (1, 0)
+    assert rows["medium"] == (0, 1)
+    assert rows["complex"] == (0, 1)
+
+
+def test_insights_quote_the_visible_numbers(frame: pd.DataFrame):
+    lines = metrics.insights(frame)
+    assert "46,9 %" in lines["tokens"]  # 150 of 320 tokens are tool traffic
+    assert "1 из 3" in lines["automation"]
+    assert "timeout" in lines["failures"]
+    assert "2 пользователя" in lines["usage"]
+    assert "вне кластеров осталось 1" in lines["catalogue"]
+
+
+def test_insights_follow_the_filter(frame: pd.DataFrame):
+    only_first = frame[frame["request_id"] == "r1"]
+    assert "1 из 1" in metrics.insights(only_first)["automation"]
+
+
+def test_insights_say_when_a_thing_never_happened(frame: pd.DataFrame):
+    calm = frame[frame["request_id"] == "r1"]
+    assert "не отметил отказ" in metrics.insights(calm)["failures"]
+
+
+def test_insights_on_an_empty_frame_do_not_raise(frame: pd.DataFrame):
+    lines = metrics.insights(frame.iloc[0:0])
+    assert set(lines) == {"tokens", "automation", "failures", "usage", "catalogue", "profile"}
+    assert all("Фильтры" in line for line in lines.values())
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [(1, "диалог"), (2, "диалога"), (5, "диалогов"), (11, "диалогов"), (21, "диалог"), (94, "диалога")],
+)
+def test_russian_plural_agreement(count: int, expected: str):
+    assert metrics.plural(count, "диалог", "диалога", "диалогов") == expected
+
+
 # --- filters ------------------------------------------------------------
 
 

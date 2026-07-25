@@ -1,9 +1,14 @@
-"""Page composition: header, evidence panel, filters, ten metric blocks, table.
+"""Page composition: five questions, each answered before it is charted.
 
-The page follows the order of metrics.md, so a reader holding that document can
-find any metric by scrolling. Each card states its formula in the `?` note next
-to the title: on a projector a number without its definition is a claim, and a
-number with one is a measurement.
+The page is ordered by what a reader wants to know — where the money goes,
+what to automate, where it breaks, who uses it, what it consists of — and not
+by the order of metrics.md. Under every section title there is one generated
+sentence with the numbers already substituted, so the conclusion and the chart
+that supports it can never drift apart.
+
+Each card states its formula in the `?` note next to the title: on a projector
+a number without its definition is a claim, and a number with one is a
+measurement.
 """
 
 from __future__ import annotations
@@ -52,18 +57,18 @@ def card(title: str, tip: str, subtitle: str, *children, className: str = "card"
     return html.Div(body, className=className)
 
 
-def section(kicker: str, title: str, body: html.Div) -> html.Div:
+def section(kicker: str, question: str, insight_id: str, body: html.Div, footnote_id: str = "") -> html.Div:
+    """A question, its generated answer, and the charts that back the answer."""
+
+    heading: list = [
+        html.Span(kicker, className="section-kicker"),
+        html.H2(question, className="section-title"),
+        html.P(id=insight_id, className="insight"),
+    ]
+    if footnote_id:
+        heading.append(html.P(id=footnote_id, className="insight insight-footnote"))
     return html.Div(
-        [
-            html.Div(
-                [
-                    html.Span(kicker, className="section-kicker"),
-                    html.H2(title, className="section-title"),
-                ],
-                className="section-heading",
-            ),
-            body,
-        ],
+        [html.Div(heading, className="section-heading"), body],
         className="metric-section",
     )
 
@@ -217,10 +222,103 @@ def graph(element_id: str) -> dcc.Graph:
     return dcc.Graph(id=element_id, config={"displayModeBar": False})
 
 
-def load_section() -> html.Div:
+def tokens_section() -> html.Div:
     return section(
-        "1—2 · Общая статистика и токены",
-        "Кто и сколько потребляет",
+        "Расход",
+        "Куда уходят токены?",
+        "insight-tokens",
+        html.Div(
+            [
+                card(
+                    "Состав расхода",
+                    "Σ user_tokens, Σ assistant_tokens, Σ tool_tokens. Сумма трёх частей "
+                    "равна total_tokens.",
+                    "Запрос пользователя, ответ агента и трафик инструментов.",
+                    graph("chart-token-split"),
+                ),
+                card(
+                    "Расход по сценариям",
+                    "Σ total_tokens внутри кластера. Средний расход на диалог почти "
+                    "одинаков во всех сценариях, поэтому этот рейтинг повторяет частоту "
+                    "сценария, а не его «дороговизну».",
+                    "Какие сценарии съедают бюджет.",
+                    graph("chart-tokens-scenario"),
+                ),
+            ],
+            className="chart-grid chart-grid-even",
+        ),
+    )
+
+
+def automation_section() -> html.Div:
+    return section(
+        "Автоматизация",
+        "Что автоматизировать первым?",
+        "insight-automation",
+        html.Div(
+            [
+                card(
+                    "Карта сценариев",
+                    "По горизонтали — доля диалогов сценария, по вертикали — доля "
+                    "диалогов с automation_candidate = True внутри него. Пунктир — "
+                    "медианы обеих осей. Цвет точки — доля простых задач в сценарии.",
+                    "Правый верхний квадрант — частые сценарии, которые анализ уже "
+                    "отметил как автоматизируемые.",
+                    graph("chart-scenario-map"),
+                ),
+                card(
+                    "Сложность и кандидаты",
+                    "Распределение complexity, разложенное по automation_candidate. "
+                    "Простое и повторяющееся автоматизируется первым.",
+                    "Сколько кандидатов в каждой группе сложности.",
+                    graph("chart-complexity-auto"),
+                ),
+            ],
+            className="chart-grid",
+        ),
+    )
+
+
+def reliability_section() -> html.Div:
+    return section(
+        "Надёжность",
+        "Где агент ломается?",
+        "insight-failures",
+        html.Div(
+            [
+                card(
+                    "Причины отказов",
+                    "Распределение failure_reason среди строк с agent_failed = True.",
+                    "Почему агент не справлялся.",
+                    graph("chart-failures"),
+                    stat_strip([], "stat-problems"),
+                ),
+                card(
+                    "Полезные и бесполезные сообщения",
+                    "Σ useful_messages и Σ useless_messages из классификатора сообщений. "
+                    "useful_ratio = useful / (useful + useless) × 100.",
+                    "Разметка сообщений агента, а не оценка пользователя.",
+                    graph("chart-quality"),
+                    stat_strip([], "stat-quality"),
+                ),
+                card(
+                    "Уверенность классификации",
+                    "Гистограмма поля confidence с порогом 0,5. Диалоги ниже порога "
+                    "нельзя считать надёжно размеченными.",
+                    "Насколько классификатор уверен в своей разметке.",
+                    graph("chart-confidence"),
+                ),
+            ],
+            className="chart-grid chart-grid-three",
+        ),
+    )
+
+
+def usage_section() -> html.Div:
+    return section(
+        "Нагрузка",
+        "Кто и когда пользуется?",
+        "insight-usage",
         html.Div(
             [
                 card(
@@ -234,7 +332,7 @@ def load_section() -> html.Div:
                 card(
                     "Нагрузка по часам",
                     "Группировка created_at по часу UTC. Это профиль доступного периода, "
-                    "а не график роста или сезонности.",
+                    "а не график роста или сезонности: в выгрузке один день.",
                     "Когда в пределах выгрузки приходили обращения.",
                     metric_toggle("hourly-metric"),
                     graph("chart-hourly"),
@@ -245,77 +343,19 @@ def load_section() -> html.Div:
     )
 
 
-def tokens_section() -> html.Div:
+def catalogue_section() -> html.Div:
     return section(
-        "2—3 · Токены и качество работы",
-        "Куда уходят токены",
+        "Состав",
+        "Что это за диалоги?",
+        "insight-catalogue",
         html.Div(
             [
                 card(
-                    "Состав расхода",
-                    "Σ user_tokens, Σ assistant_tokens, Σ tool_tokens. Сумма трёх частей "
-                    "равна total_tokens.",
-                    "Соотношение запроса, ответа и трафика инструментов.",
-                    graph("chart-token-split"),
-                ),
-                card(
-                    "Полезные и бесполезные сообщения",
-                    "Σ useful_messages и Σ useless_messages из классификатора сообщений. "
-                    "useful_ratio = useful / (useful + useless) × 100.",
-                    "Разметка сообщений агента, а не оценка пользователя.",
-                    graph("chart-quality"),
-                    stat_strip([], "stat-quality"),
-                ),
-            ],
-            className="chart-grid chart-grid-even",
-        ),
-    )
-
-
-def profile_section() -> html.Div:
-    return section(
-        "4—5, 9 · Классификация, сложность, языки",
-        "Что это за диалоги",
-        html.Div(
-            [
-                card(
-                    "Сложность",
-                    "Распределение поля complexity (simple / medium / complex), "
-                    "проставленного LLM-анализом.",
-                    "Подписи — доля от видимых диалогов.",
-                    graph("chart-complexity"),
-                ),
-                card(
-                    "Периодичность",
-                    "Распределение поля periodicity (none / daily / weekly / monthly). "
-                    "Повторяемость задачи — основной признак кандидата на автоматизацию.",
-                    "Подписи — доля от видимых диалогов.",
-                    graph("chart-periodicity"),
-                ),
-                card(
-                    "Язык",
-                    "Распределение поля language.",
-                    "Подписи — доля от видимых диалогов.",
-                    graph("chart-language"),
-                ),
-            ],
-            className="chart-grid chart-grid-three",
-        ),
-    )
-
-
-def use_cases_section() -> html.Div:
-    return section(
-        "7 · Use cases",
-        "Сценарии использования",
-        html.Div(
-            [
-                card(
-                    "Кластеры диалогов",
+                    "Сценарии",
                     "Размер кластера пересчитывается по видимым строкам, а не берётся из "
                     "member_count, поэтому цифры сходятся и под фильтром. "
                     "cluster_id = -1 — точки вне кластеров.",
-                    "Топ сценариев, найденных кластеризацией эмбеддингов.",
+                    "Кластеры, найденные по эмбеддингам диалогов.",
                     graph("chart-clusters"),
                     stat_strip([], "stat-clusters"),
                 ),
@@ -327,102 +367,87 @@ def use_cases_section() -> html.Div:
                     graph("chart-integrations"),
                     stat_strip([], "stat-integrations"),
                 ),
-            ],
-            className="chart-grid chart-grid-even",
-        ),
-    )
-
-
-def tools_section() -> html.Div:
-    return section(
-        "6, 8, 10 · Инструменты, проблемы, уверенность",
-        "Инструменты и риски",
-        html.Div(
-            [
                 card(
                     "Инструменты агента",
                     "Поле tools разбирается по «;»; avg_tool_calls считается по полю tool_calls.",
                     "Чем агент пользовался внутри диалогов.",
                     graph("chart-tools"),
                 ),
-                card(
-                    "Причины отказов",
-                    "Распределение failure_reason среди строк с agent_failed = True.",
-                    "Почему агент не справлялся.",
-                    graph("chart-failures"),
-                    stat_strip([], "stat-problems"),
-                ),
-                card(
-                    "Уверенность классификации",
-                    "Гистограмма поля confidence с порогом 0,5. Диалоги ниже порога нельзя "
-                    "считать надёжно размеченными.",
-                    "Насколько классификатор уверен в своей разметке.",
-                    graph("chart-confidence"),
-                ),
             ],
             className="chart-grid chart-grid-three",
         ),
+        footnote_id="insight-profile",
     )
 
 
 def table_section() -> html.Div:
-    return section(
-        "Исходный уровень",
-        "Диалоги без агрегации",
-        html.Div(
-            [
-                card_head(
-                    "Диалоги",
-                    "Строки текущего фильтра. Клик по пользователю на верхней диаграмме "
-                    "дополнительно сужает таблицу.",
-                ),
-                html.P(
-                    "Кнопка «Экспорт CSV» выгружает ровно эти строки.",
-                    className="card-subtitle",
-                ),
-                dash_table.DataTable(
-                    id="dialogs-table",
-                    columns=[{"name": title, "id": column} for column, title, _ in TABLE_COLUMNS],
-                    page_size=12,
-                    page_action="native",
-                    sort_action="native",
-                    fixed_rows={"headers": True},
-                    style_table={"overflowX": "auto", "height": "520px", "overflowY": "auto"},
-                    style_header={
-                        "backgroundColor": "var(--surface-2)",
-                        "color": "var(--text-primary)",
-                        "border": "none",
-                        "borderBottom": "1px solid var(--border-strong)",
-                        "fontWeight": 600,
-                    },
-                    style_data={
-                        "backgroundColor": "var(--surface-1)",
-                        "color": "var(--text-primary)",
-                        "border": "none",
-                        "borderBottom": "1px solid var(--border)",
-                    },
-                    style_cell={
-                        "fontFamily": 'system-ui, -apple-system, "Segoe UI", sans-serif',
-                        "fontSize": "13px",
-                        "padding": "8px 10px",
-                        "textAlign": "left",
-                        "whiteSpace": "normal",
-                        "height": "auto",
-                        "minWidth": "80px",
-                    },
-                    style_cell_conditional=[
-                        {
-                            "if": {"column_id": column},
-                            "width": f"{width}px",
-                            "minWidth": f"{width}px",
-                            "maxWidth": f"{width}px",
-                        }
-                        for column, _, width in TABLE_COLUMNS
+    """The raw rows. No generated conclusion here — the table is the evidence."""
+
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.Span("Исходный уровень", className="section-kicker"),
+                    html.H2("Диалоги без агрегации", className="section-title"),
+                ],
+                className="section-heading",
+            ),
+            html.Div(
+                [
+                    card_head(
+                        "Диалоги",
+                        "Строки текущего фильтра. Клик по пользователю на диаграмме нагрузки "
+                        "дополнительно сужает таблицу.",
+                    ),
+                    html.P(
+                        "Кнопка «Экспорт CSV» выгружает ровно эти строки.",
+                        className="card-subtitle",
+                    ),
+                    dash_table.DataTable(
+                        id="dialogs-table",
+                        columns=[{"name": title, "id": column} for column, title, _ in TABLE_COLUMNS],
+                        page_size=12,
+                        page_action="native",
+                        sort_action="native",
+                        fixed_rows={"headers": True},
+                        style_table={"overflowX": "auto", "height": "520px", "overflowY": "auto"},
+                        style_header={
+                            "backgroundColor": "var(--surface-2)",
+                            "color": "var(--text-primary)",
+                            "border": "none",
+                            "borderBottom": "1px solid var(--border-strong)",
+                            "fontWeight": 600,
+                        },
+                        style_data={
+                            "backgroundColor": "var(--surface-1)",
+                            "color": "var(--text-primary)",
+                            "border": "none",
+                            "borderBottom": "1px solid var(--border)",
+                        },
+                        style_cell={
+                            "fontFamily": 'system-ui, -apple-system, "Segoe UI", sans-serif',
+                            "fontSize": "13px",
+                            "padding": "8px 10px",
+                            "textAlign": "left",
+                            "whiteSpace": "normal",
+                            "height": "auto",
+                            "minWidth": "80px",
+                        },
+                        style_cell_conditional=[
+                            {
+                                "if": {"column_id": column},
+                                "width": f"{width}px",
+                                "minWidth": f"{width}px",
+                                "maxWidth": f"{width}px",
+                            }
+                            for column, _, width in TABLE_COLUMNS
+                        ],
+                    ),
                     ],
-                ),
-            ],
-            className="card card-full records",
-        ),
+                className="card card-full records",
+            ),
+        ],
+        className="metric-section",
     )
 
 
@@ -486,11 +511,11 @@ def build(
             ),
             html.Div(id="result-count", className="result-count"),
             kpi_block(cards),
-            load_section(),
             tokens_section(),
-            profile_section(),
-            use_cases_section(),
-            tools_section(),
+            automation_section(),
+            reliability_section(),
+            usage_section(),
+            catalogue_section(),
             table_section(),
         ],
         className=f"viz-root theme-{theme.name}",

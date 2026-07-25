@@ -52,6 +52,28 @@ def _share(part: float, whole: float) -> float:
     return float(part) / float(whole) * 100 if whole else 0.0
 
 
+def plural(count: int, one: str, few: str, many: str) -> str:
+    """Russian plural agreement: 1 диалог, 2 диалога, 5 диалогов.
+
+    Generated sentences are read out loud at a defence, and «94 диалогов»
+    is the kind of detail that makes a jury stop listening to the number.
+    """
+
+    count = abs(int(count))
+    if count % 100 in range(11, 15):
+        return many
+    last = count % 10
+    if last == 1:
+        return one
+    if last in (2, 3, 4):
+        return few
+    return many
+
+
+def counted(count: int, one: str, few: str, many: str) -> str:
+    return f"{integer(count)} {plural(count, one, few, many)}"
+
+
 def _column(frame: pd.DataFrame, name: str) -> pd.Series:
     if name in frame:
         return frame[name]
@@ -178,9 +200,9 @@ def integrations(frame: pd.DataFrame) -> dict:
 
     integration_counts = _explode_counts(frame, "integrations")
     tool_counts = _explode_counts(frame, "tools")
-    counted = _column(frame, "integration_count")
+    declared = _column(frame, "integration_count")
     return {
-        "dialogs_with_integrations": int((counted > 0).sum()) if len(counted) else 0,
+        "dialogs_with_integrations": int((declared > 0).sum()) if len(declared) else 0,
         "unique_integrations": int(len(integration_counts)),
         "unique_tools": int(len(tool_counts)),
         "avg_tool_calls": float(_column(frame, "tool_calls").mean()) if len(frame) else 0.0,
@@ -287,6 +309,73 @@ def confidence(frame: pd.DataFrame) -> dict:
 # --- derived views for the charts ---------------------------------------
 
 
+def scenario_map(frame: pd.DataFrame) -> pd.DataFrame:
+    """One row per cluster: scale, readiness for automation, composition.
+
+    The two axes of the map are the two halves of the automation question —
+    how often the scenario happens, and how often it was marked as a candidate.
+    Token spend is deliberately not encoded: the average cost per dialogue is
+    the same in every cluster, so a size channel would only repeat the x axis.
+    """
+
+    columns = ["cluster_id", "label", "use_case", "dialogs", "share", "automation_share",
+               "simple_share", "tokens", "avg_tokens", "failures"]
+    if "cluster_id" not in frame or frame.empty:
+        return pd.DataFrame(columns=columns)
+    named = frame[frame["cluster_id"] != -1]
+    if named.empty:
+        return pd.DataFrame(columns=columns)
+
+    grouped = named.groupby("cluster_id")
+    table = pd.DataFrame(
+        {
+            "cluster_id": grouped.size().index,
+            "use_case": grouped["use_case"].agg(lambda values: values.iloc[0]).to_numpy(),
+            "dialogs": grouped.size().to_numpy(dtype=int),
+            "automation": grouped["automation_candidate"].sum().to_numpy(dtype=int),
+            "simple": grouped["complexity"].agg(lambda values: int((values == "simple").sum())).to_numpy(),
+            "tokens": grouped["total_tokens"].sum().to_numpy(dtype="int64"),
+            "failures": grouped["agent_failed"].sum().to_numpy(dtype=int),
+        }
+    )
+    table["share"] = table["dialogs"] / len(frame) * 100
+    table["automation_share"] = table["automation"] / table["dialogs"] * 100
+    table["simple_share"] = table["simple"] / table["dialogs"] * 100
+    table["avg_tokens"] = table["tokens"] / table["dialogs"]
+    repeated = table["use_case"].duplicated(keep=False)
+    table["label"] = table["use_case"].where(
+        ~repeated, table["use_case"] + " · #" + table["cluster_id"].astype(str)
+    )
+    return table.sort_values("dialogs", ascending=False)[columns].reset_index(drop=True)
+
+
+def tokens_by_scenario(frame: pd.DataFrame) -> pd.DataFrame:
+    """Total spend per cluster, for the ranked bar next to the split."""
+
+    table = scenario_map(frame)
+    if table.empty:
+        return pd.DataFrame(columns=["key", "tokens"])
+    return table.sort_values("tokens", ascending=False)[["label", "tokens"]].rename(
+        columns={"label": "key"}
+    )
+
+
+def complexity_by_automation(frame: pd.DataFrame) -> pd.DataFrame:
+    """Candidates and the rest, split by complexity.
+
+    Simple and repeatable is what gets automated first, so the two fields are
+    shown together rather than as two separate distributions.
+    """
+
+    if frame.empty or "complexity" not in frame or "automation_candidate" not in frame:
+        return pd.DataFrame(columns=["key", "candidates", "rest"])
+    counts = _ordered_counts(frame, "complexity", COMPLEXITY_ORDER)
+    candidates = frame[frame["automation_candidate"]]["complexity"].value_counts()
+    counts["candidates"] = [int(candidates.get(key, 0)) for key in counts["key"]]
+    counts["rest"] = counts["dialogs"] - counts["candidates"]
+    return counts[["key", "candidates", "rest"]]
+
+
 def usage_ranking(frame: pd.DataFrame, metric: str = "dialogues", limit: int = 15) -> pd.DataFrame:
     """Users ranked by dialogues or by consumed tokens."""
 
@@ -328,6 +417,136 @@ def token_split(frame: pd.DataFrame) -> pd.DataFrame:
             ],
         }
     )
+
+
+def insights(frame: pd.DataFrame) -> dict[str, str]:
+    """One sentence per section, assembled from the visible rows.
+
+    These lines are generated rather than written, because a filtered page with
+    a hand-written conclusion above a recomputed chart is how a dashboard ends
+    up contradicting itself in front of a room.
+    """
+
+    empty = "Фильтры не оставили ни одной строки."
+    if frame.empty:
+        return {key: empty for key in ("tokens", "automation", "failures", "usage", "catalogue", "profile")}
+
+    total = len(frame)
+    token_stats = tokens(frame)
+    class_stats = classification(frame)
+    cluster_stats = clusters(frame)
+    problem_stats = problems(frame)
+    scenarios = scenario_map(frame)
+
+    # --- tokens
+    if token_stats["total_tokens"] == 0:
+        tokens_line = "В выбранных строках нет израсходованных токенов."
+    else:
+        tool_share = _share(token_stats["tool_tokens"], token_stats["total_tokens"])
+        answer_share = _share(token_stats["assistant_tokens"], token_stats["total_tokens"])
+        tokens_line = (
+            f"{percent(tool_share)} % расхода — трафик инструментов "
+            f"({integer(token_stats['tool_tokens'])} из {integer(token_stats['total_tokens'])} токенов), "
+            f"на ответы пользователю ушло {percent(answer_share)} %. "
+            f"Средний диалог стоит {counted(token_stats['avg_tokens_per_dialog'], 'токен', 'токена', 'токенов')}."
+        )
+
+    # --- automation
+    if class_stats["automation_candidates"] == 0:
+        automation_line = (
+            f"Ни один из {counted(total, 'диалога', 'диалогов', 'диалогов')} "
+            "не помечен кандидатом на автоматизацию."
+        )
+    else:
+        simple_candidates = int(
+            ((frame["automation_candidate"]) & (frame["complexity"] == "simple")).sum()
+        )
+        automation_line = (
+            f"Кандидатов на автоматизацию — {class_stats['automation_candidates']} "
+            f"из {integer(total)} ({percent(class_stats['automation_ratio'])} %), "
+            f"простых среди них {simple_candidates}."
+        )
+        ready = scenarios[scenarios["automation_share"] > 0].sort_values(
+            "automation_share", ascending=False
+        )
+        if not ready.empty:
+            top = ready.iloc[0]
+            automation_line += (
+                f" Плотнее всего — «{top['use_case']}»: {int(top['dialogs'] * top['automation_share'] / 100)} "
+                f"из {counted(top['dialogs'], 'диалога', 'диалогов', 'диалогов')}."
+            )
+
+    # --- failures
+    if problem_stats["agent_failures"] == 0:
+        failures_line = (
+            f"Ни в одном из {counted(total, 'диалога', 'диалогов', 'диалогов')} "
+            "агент не отметил отказ."
+        )
+    else:
+        failures_line = (
+            f"Отказов — {problem_stats['agent_failures']} из {integer(total)} "
+            f"({percent(_share(problem_stats['agent_failures'], total))} %)."
+        )
+        reasons = problem_stats["failure_reasons"]
+        if not reasons.empty:
+            top = reasons.iloc[0]
+            failures_line += f" Чаще всего: «{top['key']}» — {int(top['dialogs'])}."
+
+    # --- usage
+    per_user = frame.groupby("user_id").size().sort_values(ascending=False)
+    top_count = max(1, round(len(per_user) * 0.2))
+    top_share = _share(per_user.head(top_count).sum(), per_user.sum())
+    usage_line = (
+        f"{counted(len(per_user), 'пользователь', 'пользователя', 'пользователей')}, "
+        f"медиана {counted(per_user.median(), 'диалог', 'диалога', 'диалогов')} на человека; "
+        f"на верхние 20 % приходится {percent(top_share)} % обращений."
+    )
+    hours = hourly_load(frame)
+    if hours["dialogues"].sum():
+        peak = hours.loc[hours["dialogues"].idxmax()]
+        usage_line += (
+            f" Пик — {int(peak['hour']):02d}:00 UTC "
+            f"({counted(peak['dialogues'], 'диалог', 'диалога', 'диалогов')})."
+        )
+
+    # --- catalogue
+    covered = total - cluster_stats["outliers"]
+    if cluster_stats["total_clusters"] == 0:
+        catalogue_line = "Кластеризация не выделила ни одного сценария в выбранных строках."
+    else:
+        catalogue_line = (
+            f"{counted(cluster_stats['total_clusters'], 'сценарий', 'сценария', 'сценариев')} "
+            f"покрывают {counted(covered, 'диалог', 'диалога', 'диалогов')} "
+            f"из {integer(total)}, вне кластеров осталось {cluster_stats['outliers']}."
+        )
+        if not scenarios.empty:
+            top = scenarios.iloc[0]
+            catalogue_line += f" Самый частый — «{top['label']}» ({int(top['dialogs'])})."
+
+    # --- profile: the two distributions too flat to deserve a chart
+    parts = []
+    languages = language_distribution(frame)
+    if not languages.empty:
+        top = languages.iloc[0]
+        parts.append(f"язык: {percent(_share(top['dialogs'], total))} % {top['key']}")
+    periodicity = periodicity_distribution(frame)
+    if not periodicity.empty:
+        repeating = int(periodicity[periodicity["key"] != "none"]["dialogs"].sum())
+        parts.append(
+            f"повторяющихся задач — {repeating} из {integer(total)}"
+            if repeating
+            else "повторяющихся задач нет — все разовые"
+        )
+    profile_line = " · ".join(parts).capitalize() if parts else ""
+
+    return {
+        "tokens": tokens_line,
+        "automation": automation_line,
+        "failures": failures_line,
+        "usage": usage_line,
+        "catalogue": catalogue_line,
+        "profile": profile_line,
+    }
 
 
 def kpis(frame: pd.DataFrame) -> list[Kpi]:

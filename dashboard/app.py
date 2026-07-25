@@ -90,22 +90,28 @@ def create_app(target: str | Path) -> Dash:
     @app.callback(
         Output("kpi-container", "children"),
         Output("result-count", "children"),
-        Output("chart-users", "figure"),
-        Output("chart-hourly", "figure"),
+        Output("insight-tokens", "children"),
         Output("chart-token-split", "figure"),
+        Output("chart-tokens-scenario", "figure"),
+        Output("insight-automation", "children"),
+        Output("chart-scenario-map", "figure"),
+        Output("chart-complexity-auto", "figure"),
+        Output("insight-failures", "children"),
+        Output("chart-failures", "figure"),
+        Output("stat-problems", "children"),
         Output("chart-quality", "figure"),
         Output("stat-quality", "children"),
-        Output("chart-complexity", "figure"),
-        Output("chart-periodicity", "figure"),
-        Output("chart-language", "figure"),
+        Output("chart-confidence", "figure"),
+        Output("insight-usage", "children"),
+        Output("chart-users", "figure"),
+        Output("chart-hourly", "figure"),
+        Output("insight-catalogue", "children"),
+        Output("insight-profile", "children"),
         Output("chart-clusters", "figure"),
         Output("stat-clusters", "children"),
         Output("chart-integrations", "figure"),
         Output("stat-integrations", "children"),
         Output("chart-tools", "figure"),
-        Output("chart-failures", "figure"),
-        Output("stat-problems", "children"),
-        Output("chart-confidence", "figure"),
         Output("dialogs-table", "data"),
         filter_inputs,
         Input("flag-filters", "value"),
@@ -126,6 +132,8 @@ def create_app(target: str | Path) -> Dash:
         integration_stats = metrics.integrations(filtered)
         problem_stats = metrics.problems(filtered)
         confidence_stats = metrics.confidence(filtered)
+        lines = metrics.insights(filtered)
+        cards = metrics.kpis(filtered)
 
         result = f"Показано {len(filtered)} из {len(frame)} диалогов."
         if len(rows) != len(filtered):
@@ -133,16 +141,46 @@ def create_app(target: str | Path) -> Dash:
             result += f" В таблице — {len(rows)} диалогов пользователя {selected}."
 
         return (
-            [layout.kpi_row(metrics.kpis(filtered)[:4]), layout.kpi_row(metrics.kpis(filtered)[4:])],
+            [layout.kpi_row(cards[:4]), layout.kpi_row(cards[4:])],
             result,
-            charts.usage_bar(
-                metrics.usage_ranking(filtered, users_metric),
-                active_theme,
-                users_metric,
-                (selection or {}).get("value"),
-            ),
-            charts.hourly_profile(metrics.hourly_load(filtered), active_theme, hourly_metric),
+            # Куда уходят токены?
+            lines["tokens"],
             charts.donut(metrics.token_split(filtered), active_theme),
+            charts.ranked_bar(
+                metrics.tokens_by_scenario(filtered),
+                active_theme,
+                value="tokens",
+                limit=10,
+                unit="токенов",
+                divisor=1000,
+                axis_title="Токены, тыс.",
+                color=active_theme.series[0],
+            ),
+            # Что автоматизировать первым?
+            lines["automation"],
+            charts.scenario_scatter(metrics.scenario_map(filtered), active_theme),
+            charts.grouped_bar(
+                metrics.complexity_by_automation(filtered),
+                active_theme,
+                left=("candidates", "Кандидаты"),
+                right=("rest", "Остальные"),
+            ),
+            # Где агент ломается?
+            lines["failures"],
+            charts.ranked_bar(
+                problem_stats["failure_reasons"],
+                active_theme,
+                limit=8,
+                color=active_theme.critical,
+                height=260,
+            ),
+            layout.stat_strip(
+                [
+                    ("отказов агента", integer(problem_stats["agent_failures"])),
+                    ("prompt injection", integer(problem_stats["prompt_injections"])),
+                    ("с чувствительными данными", integer(problem_stats["sensitive_data"])),
+                ]
+            ).children,
             charts.stacked_pair(
                 active_theme,
                 left_label="Полезные",
@@ -161,15 +199,19 @@ def create_app(target: str | Path) -> Dash:
                     ("доля сожжённых токенов", f"{percent(token_stats['burned_ratio'])} %"),
                 ]
             ).children,
-            charts.category_bar(
-                metrics.complexity_distribution(filtered), active_theme, color=active_theme.series[0]
+            charts.confidence_histogram(confidence_stats["values"], active_theme, LOW_CONFIDENCE),
+            # Кто и когда пользуется?
+            lines["usage"],
+            charts.usage_bar(
+                metrics.usage_ranking(filtered, users_metric),
+                active_theme,
+                users_metric,
+                (selection or {}).get("value"),
             ),
-            charts.category_bar(
-                metrics.periodicity_distribution(filtered), active_theme, color=active_theme.series[1]
-            ),
-            charts.category_bar(
-                metrics.language_distribution(filtered), active_theme, color=active_theme.series[2]
-            ),
+            charts.hourly_profile(metrics.hourly_load(filtered), active_theme, hourly_metric),
+            # Что это за диалоги?
+            lines["catalogue"],
+            lines["profile"],
             charts.ranked_bar(
                 cluster_stats["sizes"],
                 active_theme,
@@ -213,21 +255,6 @@ def create_app(target: str | Path) -> Dash:
                 limit=12,
                 color=active_theme.series[1],
             ),
-            charts.ranked_bar(
-                problem_stats["failure_reasons"],
-                active_theme,
-                limit=8,
-                color=active_theme.critical,
-                height=260,
-            ),
-            layout.stat_strip(
-                [
-                    ("отказов агента", integer(problem_stats["agent_failures"])),
-                    ("prompt injection", integer(problem_stats["prompt_injections"])),
-                    ("с чувствительными данными", integer(problem_stats["sensitive_data"])),
-                ]
-            ).children,
-            charts.confidence_histogram(confidence_stats["values"], active_theme, LOW_CONFIDENCE),
             _table_records(rows),
         )
 
