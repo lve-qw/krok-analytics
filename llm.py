@@ -41,7 +41,7 @@ class LLMAnalyzer:
             return "cuda" if torch.cuda.is_available() else "cpu"
 
     def analyze_dialog(self, dialog: Dialog) -> DialogMetadata:
-        dialog_text = self._format_dialog(dialog)
+        dialog_text = self._format_dialog_truncated(dialog, max_tokens=28000)
         prompt = ANALYZE_DIALOG_PROMPT.format(dialog_text=dialog_text)
         
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
@@ -49,7 +49,7 @@ class LLMAnalyzer:
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=config.models.max_tokens,
+                max_new_tokens=512,
                 temperature=config.models.temperature,
                 do_sample=True,
                 pad_token_id=self.tokenizer.eos_token_id
@@ -67,6 +67,20 @@ class LLMAnalyzer:
         parts = []
         for msg in dialog.messages:
             parts.append(f"{msg.role.upper()}: {msg.content}")
+        return "\n\n".join(parts)
+
+    def _format_dialog_truncated(self, dialog: Dialog, max_tokens: int = 28000) -> str:
+        parts = []
+        current_tokens = 0
+        
+        for i, msg in enumerate(dialog.messages):
+            msg_tokens = len(self.tokenizer.encode(msg.content))
+            if current_tokens + msg_tokens > max_tokens and i > 10:
+                parts.append(f"... [ещё {len(dialog.messages) - i} сообщений обрезано из-за ограничения длины] ...")
+                break
+            parts.append(f"{msg.role.upper()}: {msg.content}")
+            current_tokens += msg_tokens
+        
         return "\n\n".join(parts)
 
     def _parse_response(self, response: str) -> Optional[DialogMetadata]:
