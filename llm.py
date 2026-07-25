@@ -86,10 +86,17 @@ class LLMAnalyzer:
     def _parse_response(self, response: str) -> Optional[DialogMetadata]:
         try:
             response = response.strip()
+            
+            if not response:
+                print("Warning: Empty LLM response")
+                return None
+            
             if response.startswith("```"):
-                response = response.split("```")[1]
+                parts = response.split("```")
+                response = parts[1] if len(parts) > 1 else response
                 if response.startswith("json"):
                     response = response[3:]
+            
             response = response.strip()
             
             data = json.loads(response)
@@ -118,6 +125,7 @@ class LLMAnalyzer:
             )
         except (json.JSONDecodeError, Exception) as e:
             print(f"Error parsing LLM response: {e}")
+            print(f"Raw response: {response[:500] if response else 'EMPTY'}")
             return None
 
     def _get_default_metadata(self) -> DialogMetadata:
