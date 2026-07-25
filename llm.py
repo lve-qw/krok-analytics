@@ -91,15 +91,30 @@ class LLMAnalyzer:
                 print("Warning: Empty LLM response")
                 return None
             
-            if response.startswith("```"):
-                parts = response.split("```")
-                response = parts[1] if len(parts) > 1 else response
-                if response.startswith("json"):
-                    response = response[3:]
+            # Ищем JSON по первой открывающей скобке
+            start_idx = response.find('{')
+            if start_idx == -1:
+                print(f"Warning: No JSON found in response")
+                return None
             
-            response = response.strip()
+            # Извлекаем подстроку начиная с '{'
+            json_str = response[start_idx:]
             
-            data = json.loads(response)
+            # Пытаемся найти закрывающую скобку или обрезать по последнему корректному символу
+            end_idx = json_str.rfind('}')
+            if end_idx != -1:
+                json_str = json_str[:end_idx + 1]
+            
+            # Очищаем от markdown
+            if json_str.startswith("```"):
+                parts = json_str.split("```")
+                json_str = parts[1] if len(parts) > 1 else json_str
+                if json_str.startswith("json"):
+                    json_str = json_str[3:]
+            
+            json_str = json_str.strip()
+            
+            data = json.loads(json_str)
             return DialogMetadata(
                 summary=data.get("summary", ""),
                 goal=data.get("goal", ""),
