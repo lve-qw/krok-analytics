@@ -1,6 +1,7 @@
 import numpy as np
 from typing import List, Dict, Tuple
 import hdbscan
+from umap import UMAP
 from sklearn.metrics import silhouette_score
 from schemas import ClusterInfo, UseCase
 from prompts import NAME_CLUSTER_PROMPT
@@ -12,18 +13,32 @@ class DialogClusterer:
         self.min_cluster_size = config.clustering.min_cluster_size
         self.min_samples = config.clustering.min_samples
         self.top_n = config.clustering.top_n_for_naming
+        self.n_neighbors = config.clustering.n_neighbors
+        self.n_components = config.clustering.n_components
         self.llm = llm_analyzer
 
     def cluster(self, embeddings: np.ndarray) -> Dict[int, List[int]]:
+        # UMAP для уменьшения размерности перед HDBSCAN
+        reducer = UMAP(
+            n_components=self.n_components,
+            n_neighbors=self.n_neighbors,
+            min_dist=0.1,
+            metric='cosine',
+            random_state=42
+        )
+        reduced_embeddings = reducer.fit_transform(embeddings)
+        
+        # HDBSCAN с меньшим min_cluster_size для большего количества кластеров
         clusterer = hdbscan.HDBSCAN(
             min_cluster_size=self.min_cluster_size,
             min_samples=self.min_samples,
             metric='euclidean',
             cluster_selection_method='eom',
-            prediction_data=True
+            prediction_data=True,
+            allow_single_cluster=False
         )
         
-        labels = clusterer.fit_predict(embeddings)
+        labels = clusterer.fit_predict(reduced_embeddings)
         
         clusters: Dict[int, List[int]] = {}
         noise_indices = []

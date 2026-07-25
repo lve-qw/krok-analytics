@@ -21,9 +21,11 @@ class ClassificationConfig:
 
 @dataclass
 class ClusteringConfig:
-    min_cluster_size: int = 6 # Уменьшено для большего количества кластеров
-    min_samples: int = 3       # Уменьшено для большего количества кластеров
+    min_cluster_size: int = 3  # Минимум 3 диалога в кластере
+    min_samples: int = 2       # Минимум 2 соседа для точки
     top_n_for_naming: int = 30
+    n_neighbors: int = 15      # Для UMAP (локальная структура)
+    n_components: int = 5      # Размерность после UMAP
 
 
 @dataclass
