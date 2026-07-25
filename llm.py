@@ -134,7 +134,14 @@ class LLMAnalyzer:
             tools = ensure_list(data.get("tools", []))
             company_sources = ensure_list(data.get("company_sources", []))
             requires_generation = ensure_list(data.get("requires_generation", []))
-            search_type = ensure_list(data.get("search_type", []))
+            
+            # Нормализация search_type (только "internet" или "internal")
+            raw_search = ensure_list(data.get("search_type", []))
+            search_type = [s for s in raw_search if s in ["internet", "internal"]]
+            
+            # Нормализация steps_requested (должно быть числом)
+            raw_steps = data.get("steps_requested", 1)
+            steps_requested = int(raw_steps) if isinstance(raw_steps, (int, float)) else 1
             
             return DialogMetadata(
                 summary=data.get("summary", ""),
@@ -144,7 +151,7 @@ class LLMAnalyzer:
                 automation_candidate=bool(data.get("automation_candidate", False)),
                 periodicity=periodicity,
                 complexity=complexity,
-                steps_requested=int(data.get("steps_requested", 1)),
+                steps_requested=steps_requested,
                 integrations=integrations,
                 integration_count=len(integrations),
                 tools=tools,
