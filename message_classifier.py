@@ -1,6 +1,6 @@
 import json
 import torch
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from schemas import Dialog, MessageClassification, MessageClassificationResult
 from prompts import CLASSIFY_MESSAGES_PROMPT
 from config import config
@@ -51,79 +51,38 @@ class MessageClassifier:
                 result_info = json.dumps(msg.result) if msg.result else ""
                 lines.append(f"[{i}] Tool: {tool_info} → {result_info}")
         return "\n".join(lines)
+    
+    def _format_dialog_chunk(self, dialog: Dialog, message_indices: List[Tuple[int, any]]) -> str:
+        """Форматируем только выбранные сообщения для чанка."""
+        lines = []
+        indices = set(idx for idx, _ in message_indices)
+        
+        for i, msg in enumerate(dialog.messages):
+            if i in indices or msg.role == "user":
+                if msg.role == "user":
+                    lines.append(f"[{i}] User: {msg.content}")
+                elif msg.role == "assistant":
+                    lines.append(f"[{i}] Agent: {msg.content}")
+                elif msg.role == "tool":
+                    tool_info = f"{msg.tool_name}({json.dumps(msg.arguments) if msg.arguments else ''})"
+                    result_info = json.dumps(msg.result) if msg.result else ""
+                    lines.append(f"[{i}] Tool: {tool_info} → {result_info}")
+        return "\n".join(lines)
 
     def classify_dialog(self, dialog: Dialog) -> MessageClassificationResult:
-        """Классифицирует все сообщения агента в диалоге."""
-        dialog_text = self._format_dialog(dialog)
-        prompt = CLASSIFY_MESSAGES_PROMPT.format(dialog_text=dialog_text)
+        """Классифицирует все сообщения агента в диалоге по чанкам."""
+        max_chunk_tokens = 100000
+        chunk_size = 20
         
-        # Очищаем кэш CUDA перед каждой классификацией
-        if self.device == "cuda":
-            torch.cuda.empty_cache()
+        all_classifications = []
+        burned_tokens = 0
+        useful_count = 0
+        useless_count = 0
         
-        try:
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-            
-            # Проверяем длину промпта
-            prompt_length = inputs.input_ids.shape[1]
-            if prompt_length > 4000:
-                print(f"Warning: Long prompt ({prompt_length} tokens), truncating...")
-                inputs.input_ids = inputs.input_ids[:, :4000]
-                inputs.attention_mask = inputs.attention_mask[:, :4000]
-            
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=300,  # Уменьшено с 500
-                    temperature=0.1,
-                    do_sample=False,  # Убран do_sample для экономии памяти
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    use_cache=True  # Включаем кэширование для скорости
-                )
-            
-            generated = self.tokenizer.decode(
-                outputs[0][inputs.input_ids.shape[1]:], 
-                skip_special_tokens=True
-            ).strip()
-            
-            # Освобождаем память
-            del outputs, inputs
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
-            
-            # Парсим JSON из ответа
-            classifications = self._parse_response(generated, dialog.messages)
-            
-            # Считаем burned_tokens
-            burned_tokens = 0
-            useful_count = 0
-            useless_count = 0
-            
-            for cls in classifications:
-                if cls.is_useful:
-                    useful_count += 1
-                else:
-                    useless_count += 1
-                    # Считаем токены бесполезного сообщения
-                    msg = dialog.messages[cls.message_index]
-                    if msg.role == "assistant":
-                        burned_tokens += self._count_tokens(msg.content)
-                    elif msg.role == "tool":
-                        tool_text = json.dumps(msg.arguments or {}) + json.dumps(msg.result or {})
-                        burned_tokens += self._count_tokens(tool_text)
-            
-            return MessageClassificationResult(
-                messages=classifications,
-                burned_tokens=burned_tokens,
-                total_messages=len(classifications),
-                useful_count=useful_count,
-                useless_count=useless_count
-            )
-            
-        except Exception as e:
-            print(f"Error classifying messages: {e}")
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
+        assistant_messages = [(i, msg) for i, msg in enumerate(dialog.messages) 
+                              if msg.role in ["assistant", "tool"]]
+        
+        if not assistant_messages:
             return MessageClassificationResult(
                 messages=[],
                 burned_tokens=0,
@@ -131,6 +90,69 @@ class MessageClassifier:
                 useful_count=0,
                 useless_count=0
             )
+        
+        for i in range(0, len(assistant_messages), chunk_size):
+            chunk = assistant_messages[i:i + chunk_size]
+            
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+            
+            chunk_dialog_text = self._format_dialog_chunk(dialog, chunk)
+            prompt = CLASSIFY_MESSAGES_PROMPT.format(dialog_text=chunk_dialog_text)
+            
+            try:
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+                prompt_length = inputs.input_ids.shape[1]
+                
+                if prompt_length > max_chunk_tokens:
+                    print(f"Warning: Chunk too long ({prompt_length}), skipping...")
+                    del inputs
+                    continue
+                
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=300,
+                        pad_token_id=self.tokenizer.eos_token_id,
+                        use_cache=True
+                    )
+                
+                generated = self.tokenizer.decode(
+                    outputs[0][inputs.input_ids.shape[1]:], 
+                    skip_special_tokens=True
+                ).strip()
+                
+                del outputs, inputs
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
+                
+                chunk_classifications = self._parse_response(generated, dialog.messages)
+                all_classifications.extend(chunk_classifications)
+                
+                for cls in chunk_classifications:
+                    if cls.is_useful:
+                        useful_count += 1
+                    else:
+                        useless_count += 1
+                        msg = dialog.messages[cls.message_index]
+                        if msg.role == "assistant":
+                            burned_tokens += self._count_tokens(msg.content)
+                        elif msg.role == "tool":
+                            tool_text = json.dumps(msg.arguments or {}) + json.dumps(msg.result or {})
+                            burned_tokens += self._count_tokens(tool_text)
+                
+            except Exception as e:
+                print(f"Error classifying chunk {i // chunk_size}: {e}")
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
+        
+        return MessageClassificationResult(
+            messages=all_classifications,
+            burned_tokens=burned_tokens,
+            total_messages=len(all_classifications),
+            useful_count=useful_count,
+            useless_count=useless_count
+        )
 
     def _parse_response(self, response: str, messages: List) -> List[MessageClassification]:
         """Парсит JSON ответ от модели с валидацией и нормализацией."""
