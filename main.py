@@ -18,7 +18,7 @@ from utils import (
 from schemas import DialogAnalysis, DialogMetadata, ClassificationResult, TokenCounts
 
 
-def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
+def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None, skip_llm: bool = False):
     if dialogs_dir is None:
         dialogs_dir = config.paths.dialogs_dir
     if outputs_dir is None:
@@ -29,6 +29,9 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
     print("=" * 50)
     print("ЗАПУСК PIPELINE АНАЛИЗА ДИАЛОГОВ")
     print("=" * 50)
+    
+    if skip_llm:
+        print("\n!!! РЕЖИМ БЫСТРОЙ КЛАСТЕРИЗАЦИИ (LLM и классификация пропущены) !!!")
     
     print("\n[1/6] Загрузка данных...")
     parser = DialogParser(dialogs_dir)
@@ -46,30 +49,68 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
     print("\n[3/6] Инициализация моделей...")
     token_counter = TokenCounter()
     
-    print("\n--- LLM Analyzer ---")
-    llm_analyzer = LLMAnalyzer()
+    llm_analyzer = None
+    classifier = None
     
-    print("\n--- Zero-Shot Classifier ---")
-    classifier = ZeroShotClassifier(classes)
+    if not skip_llm:
+        print("\n--- LLM Analyzer ---")
+        llm_analyzer = LLMAnalyzer()
+        
+        print("\n--- Zero-Shot Classifier ---")
+        classifier = ZeroShotClassifier(classes)
+    else:
+        print("\n[SKIP] LLM Analyzer и Zero-Shot Classifier пропущены")
     
     print("\n--- Text Embedder ---")
     embedder = TextEmbedder()
     
-    print("\n[4/6] Анализ диалогов (LLM + Zero-Shot)...")
+    print("\n[4/6] Анализ диалогов..." + ("(только токены)" if skip_llm else "(LLM + Zero-Shot)..."))
     analyses = []
     
-    for dialog in tqdm(dialogs, desc="Анализ диалогов"):
+    for dialog in tqdm(dialogs, desc="Обработка диалогов"):
         first_msg = parser.get_first_user_message(dialog)
         dialog_text = parser.get_dialog_text(dialog)
-        
-        metadata = llm_analyzer.analyze_dialog(dialog)
-        # Классифицируем только первое сообщение пользователя (не весь диалог)
-        classification = classifier.classify(first_msg)
         token_counts = token_counter.count_messages(dialog.messages)
         
-        # Определяем статус анализа
-        analysis_status = "parse_error" if metadata.failure_reason == "LLM parse error" else "success"
-        metadata_confidence = 0.0 if analysis_status == "parse_error" else 1.0
+        if skip_llm:
+            # Создаём пустые метаданные без LLM
+            from schemas import DialogMetadata, ClassificationResult
+            metadata = DialogMetadata(
+                summary="",
+                goal="",
+                intent="",
+                is_work=False,
+                automation_candidate=False,
+                periodicity="none",
+                complexity="simple",
+                steps_requested=1,
+                integrations=[],
+                integration_count=0,
+                tools=[],
+                tool_calls=0,
+                uses_company_data=False,
+                company_sources=[],
+                requires_generation=[],
+                search_type=[],
+                contains_sensitive_data=False,
+                prompt_injection=False,
+                agent_failed=False,
+                failure_reason=None,
+                language="ru"
+            )
+            classification = ClassificationResult(
+                class_ids=[],
+                class_names=[],
+                scores=[],
+                confidence=0.0
+            )
+            analysis_status = "skipped"
+            metadata_confidence = 0.0
+        else:
+            metadata = llm_analyzer.analyze_dialog(dialog)
+            classification = classifier.classify(first_msg)
+            analysis_status = "parse_error" if metadata.failure_reason == "LLM parse error" else "success"
+            metadata_confidence = 0.0 if analysis_status == "parse_error" else 1.0
         
         analysis = DialogAnalysis(
             request_id=dialog.id,
@@ -93,7 +134,8 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
     messages = [a.first_user_message for a in analyses]
     embeddings = embedder.embed_batch(messages, show_progress=True)
     
-    clusterer = DialogClusterer(llm_analyzer)
+    # Передаём llm_analyzer только если не skip_llm, иначе кластеризация без LLM-именования
+    clusterer = DialogClusterer(llm_analyzer if not skip_llm else None)
     request_ids = [a.request_id for a in analyses]
     clusters, use_cases = clusterer.process_clusters(embeddings, messages, request_ids)
     
@@ -119,11 +161,17 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
     print(f"\nСтатистика:")
     print(f"  - Диалогов обработано: {len(analyses)}")
     print(f"  - Кластеров найдено: {len(clusters)}")
-    print(f"  - Рабочих запросов: {sum(1 for a in analyses if a.metadata.is_work)}")
-    print(f"  - Кандидатов на автоматизацию: {sum(1 for a in analyses if a.metadata.automation_candidate)}")
+    if not skip_llm:
+        print(f"  - Рабочих запросов: {sum(1 for a in analyses if a.metadata.is_work)}")
+        print(f"  - Кандидатов на автоматизацию: {sum(1 for a in analyses if a.metadata.automation_candidate)}")
+    else:
+        print(f"  - LLM анализ пропущен (режим быстрой кластеризации)")
     
     return analytics_df
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    import sys
+    # python main.py --skip-llm для быстрой кластеризации
+    skip_llm = "--skip-llm" in sys.argv
+    run_pipeline(skip_llm=skip_llm)
