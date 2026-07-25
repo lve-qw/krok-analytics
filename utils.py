@@ -79,7 +79,7 @@ def save_analytics_csv(dialogs_path: Path, use_cases_path: Path, output_path: Pa
 
 def load_classes(classes_path: Path) -> List[tuple]:
     classes = []
-    with open(classes_path, "r", encoding="utf-8") as f:
+    with open(classes_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
             classes.append((int(row["id"]), row["название_класса"]))
