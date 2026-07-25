@@ -21,8 +21,8 @@ class ClassificationConfig:
 
 @dataclass
 class ClusteringConfig:
-    min_cluster_size: int = 5
-    min_samples: int = 3
+    min_cluster_size: int = 2  # Уменьшено для большего количества кластеров
+    min_samples: int = 1       # Уменьшено для большего количества кластеров
     top_n_for_naming: int = 30
 
 
