@@ -1,0 +1,5 @@
+# Lightweight environment for the file adapter, validator and local dashboard.
+# The GPU pipeline has its own full dependency set in requirements.txt.
+pandas>=2.0.0
+dash>=3.0.0
+plotly>=6.0.0

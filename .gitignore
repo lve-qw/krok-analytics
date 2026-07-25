@@ -4,3 +4,15 @@ __pycache__/
 *.py[cod]
 .venv/
 .DS_Store
+.pytest_cache/
+
+# Local imports may contain production logs. Keep only their instructions.
+data/imports/*
+!data/imports/README.md
+
+# Files copied to the repository root during local data transfer.
+/analytics.csv
+/dialogs.csv
+/use_cases.csv
+/temp-data-transfer-main/
+/A.

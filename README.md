@@ -1,6 +1,44 @@
-# KROK Analytics Pipeline
+# КРОК «Промпт-радар»
 
-Система анализа логов корпоративного AI-агента для кейса КРОК.
+Аналитика логов обращений к корпоративным ИИ-агентам: файловый адаптер,
+валидатор канонического контракта и локальный Dash-дашборд.
+
+## Быстрый запуск дашборда
+
+Для адаптера и дашборда GPU и тяжёлые зависимости pipeline не нужны.
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dashboard.txt
+./run_dashboard.sh --demo
+```
+
+После запуска откройте <http://127.0.0.1:8050>.
+
+Для своей выгрузки создайте отдельную папку и положите в неё два файла:
+
+```text
+data/imports/current/
+├── dialogs.csv
+└── use_cases.csv
+```
+
+Запустите:
+
+```bash
+./run_dashboard.sh data/imports/current
+```
+
+Подробности о формате и правилах хранения входных файлов находятся в
+[`data/imports/README.md`](data/imports/README.md). Другой порт можно задать так:
+
+```bash
+PORT=8060 ./run_dashboard.sh data/imports/current
+```
+
+Скрипт последовательно запускает адаптер, валидатор и локальный сервер. Если
+канонический файл не проходит проверку, сервер не стартует. Результаты пишутся в
+`outputs/`, которая исключена из Git.
 
 ## Архитектура
 
@@ -9,13 +47,18 @@ Pipeline из 3 этапов:
 2. **Zero-shot классификация** (facebook/bart-large-mnli) — категоризация по классам из classes.csv
 3. **Кластеризация эмбеддингов** (paraphrase-multilingual-MiniLM-L12-v2 + HDBSCAN) — поиск use cases
 
-## Установка
+## Полный processing pipeline
+
+Этот раздел нужен только для обработки исходных JSON с помощью моделей. Запуск
+требует GPU, загрузки Qwen2.5-7B и полного набора зависимостей.
+
+### Установка
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Запуск
+### Запуск
 
 ```python
 from main import run_pipeline
@@ -32,7 +75,7 @@ run_pipeline(
 python main.py
 ```
 
-## Выходные файлы
+### Выходные файлы
 
 Legacy-выход pipeline (не изменялся):
 
@@ -56,7 +99,7 @@ legacy/demo-метаданными и каноническим `class_id` не �
 ### 1. Экспорт в канонический формат
 
 ```bash
-python analytics_export.py
+.venv/bin/python analytics_export.py
 ```
 
 Читает `outputs/dialogs.csv` и `outputs/use_cases.csv`. Pipeline не запускает и
@@ -71,7 +114,7 @@ legacy-выход не трогает. Нормализует `tools` и `integr
 ### 2. Валидация
 
 ```bash
-python -m analytics_contract.validate \
+.venv/bin/python -m analytics_contract.validate \
   --analytics outputs/analytics.canonical.csv \
   --classes data/classes_31.csv
 ```
@@ -84,7 +127,7 @@ python -m analytics_contract.validate \
 ### 3. Dashboard
 
 ```bash
-python -m analytics_contract.dashboard.app \
+.venv/bin/python -m analytics_contract.dashboard.app \
   --input outputs/analytics.canonical.csv
 ```
 
@@ -125,9 +168,7 @@ python -m analytics_contract.dashboard.app \
 цепочки без GPU:
 
 ```bash
-python3 scripts/make_sample_pipeline_output.py
-python analytics_export.py
-python -m analytics_contract.validate
+./run_dashboard.sh --demo
 ```
 
 Генератор создаёт `outputs/dialogs.csv` и `use_cases.csv` в формате pipeline.
@@ -141,32 +182,29 @@ python -m analytics_contract.validate
 ### Тесты
 
 ```bash
-python -m unittest discover -s tests -v
+.venv/bin/python -m unittest discover -s tests -v
 ```
 
 ## Структура проекта
 
-```
-krok_analytics/
-├── main.py                  # Точка входа
-├── config.py                # Конфигурация
-├── schemas.py               # Pydantic модели
-├── prompts.py               # Промпты для LLM
-├── llm.py                   # LLM инференс
-├── parser.py                # Парсинг JSON
-├── token_counter.py         # Подсчет токенов
-├── zero_shot_classifier.py  # BART-MNLI
-├── embeddings.py            # Sentence-transformers
-├── clustering.py            # HDBSCAN
-├── utils.py                 # Утилиты
+```text
+krok-analytics/
+├── analytics_contract/      # Контракт, валидатор и дашборд
 ├── data/
-│   ├── dialogs/             # Входные JSON
-│   └── classes.csv          # Классы
-├── outputs/                 # Результаты
-└── models/                  # Кэш моделей
+│   ├── dialogs/             # Демо-JSON для полного pipeline
+│   ├── imports/             # Локальные CSV-выгрузки
+│   └── classes_31.csv       # Официальная таксономия
+├── docs/                    # Каталог метрик и пояснения
+├── scripts/                 # Генератор синтетического выхода
+├── tests/
+├── analytics_export.py      # Файловый адаптер
+├── run_dashboard.sh         # Адаптер → валидатор → сервер
+├── requirements-dashboard.txt
+├── main.py                  # GPU processing pipeline
+└── requirements.txt         # Полные зависимости pipeline
 ```
 
 ## Требования
 
-- Python 3.10+
-- GPU с 16GB+ памяти (рекомендуется для A100)
+- дашборд: Python 3.10+, GPU не нужен;
+- полный pipeline: GPU с 16 GB+ памяти (рекомендуется A100).
