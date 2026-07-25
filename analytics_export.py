@@ -62,7 +62,13 @@ class ExportReport:
     unmapped_integrations: Counter = field(default_factory=Counter)
     dropped_generation_values: Counter = field(default_factory=Counter)
     dropped_search_values: Counter = field(default_factory=Counter)
+    substituted_text: Counter = field(default_factory=Counter)
     unclustered_rows: int = 0
+    #: Dialogues where the agent failed that never reach the canonical file
+    #: because the analysis step could not parse them. Tracked separately from
+    #: `errors_by_reason` because it is the size of the survivorship bias in
+    #: every reliability figure the dashboard shows.
+    dropped_agent_failures: int = 0
     registry_enforced: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -83,7 +89,9 @@ class ExportReport:
                 "requires_generation": dict(sorted(self.dropped_generation_values.items())),
                 "search_type": dict(sorted(self.dropped_search_values.items())),
             },
+            "substituted_text": dict(sorted(self.substituted_text.items())),
             "unclustered_rows": self.unclustered_rows,
+            "dropped_agent_failures": self.dropped_agent_failures,
             "limitations": [
                 "tool_tokens is 0 for every row because the source dialogs contain no "
                 "role='tool' messages. This is missing instrumentation, not evidence "
@@ -187,6 +195,28 @@ class _RowConverter:
         self.report = report
         self.request_id = (row.get("request_id") or "").strip()
 
+    #: Fallback order for the three required text fields. The pipeline leaves
+    #: `summary` empty on most rows, so a row that carries a usable text
+    #: elsewhere is substituted rather than dropped. Every substitution is
+    #: counted, because a substituted `summary` is the user's own words, not a
+    #: model-written précis, and the dashboard must not label it as one.
+    TEXT_FALLBACKS: dict[str, tuple[str, ...]] = {
+        "summary": ("summary", "goal", "intent", "first_user_message"),
+        "goal": ("goal", "intent", "summary", "first_user_message"),
+        "intent": ("intent", "goal", "summary", "first_user_message"),
+    }
+
+    def _text(self, column: str) -> str:
+        """First non-empty value from the fallback chain for `column`."""
+
+        for index, source in enumerate(self.TEXT_FALLBACKS[column]):
+            value = (self.row.get(source) or "").strip()
+            if value:
+                if index:
+                    self.report.substituted_text[f"{column}<-{source}"] += 1
+                return value
+        return ""
+
     def convert(self) -> tuple[dict[str, Any] | None, tuple[str, str, str] | None]:
         """Return ``(canonical_row, None)`` or ``(None, (stage, reason, detail))``."""
 
@@ -248,12 +278,14 @@ class _RowConverter:
 
         return {
             "request_id": self.request_id,
+            "user_id": (self.row.get("user_id") or "").strip(),
+            "created_at": (self.row.get("created_at") or "").strip(),
             "class_ids": class_ids,
             "class_names": class_names,
             "confidence": _parse_float(self.row.get("confidence", "")) or 0.0,
-            "summary": (self.row.get("summary") or "").strip(),
-            "goal": (self.row.get("goal") or "").strip(),
-            "intent": (self.row.get("intent") or "").strip(),
+            "summary": self._text("summary"),
+            "goal": self._text("goal"),
+            "intent": self._text("intent"),
             "is_work": _parse_bool(self.row.get("is_work", "")),
             "automation_candidate": _parse_bool(self.row.get("automation_candidate", "")),
             "periodicity": (self.row.get("periodicity") or "").strip(),
@@ -285,14 +317,31 @@ class _RowConverter:
         if not self.request_id:
             return ("ingest", "missing_request_id", "request_id is empty")
 
+        if not (self.row.get("user_id") or "").strip():
+            return ("ingest", "missing_user_id", "user_id is empty")
+
+        if not (self.row.get("created_at") or "").strip():
+            return ("ingest", "missing_created_at", "created_at is empty")
+
         if (self.row.get("analysis_status") or "").strip() == "parse_error":
             # Decision 5: a pipeline failure is not an agent failure. The row is
             # excluded and counted; agent_failed is left alone.
+            #
+            # These rows are not lost at random: on the current data 6 of the 8
+            # dialogues where the agent failed land here, so the surviving
+            # failure rate understates reality by roughly four times. The count
+            # is carried into the report and shown on the dashboard rather than
+            # being left as a silent drop.
+            if _parse_bool(self.row.get("agent_failed", "")):
+                self.report.dropped_agent_failures += 1
             return ("llm_analysis", "llm_parse_error", "LLM response could not be parsed")
 
-        for column in ("summary", "goal", "intent"):
-            if not (self.row.get(column) or "").strip():
-                return ("llm_analysis", "empty_text_field", f"{column} is empty")
+        if not self._text("summary"):
+            return (
+                "llm_analysis",
+                "empty_text_field",
+                "summary, goal, intent and first_user_message are all empty",
+            )
 
         class_ids = _dedupe(_parse_legacy_list(self.row.get("class_ids", "")))
         if not class_ids:

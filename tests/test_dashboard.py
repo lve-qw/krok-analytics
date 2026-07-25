@@ -21,7 +21,8 @@ CLASSES = [
 ]
 
 BASE_ROW = {
-    "request_id": "1", "class_ids": '["email_summary"]', "class_names": '["Сводка по письмам"]',
+    "request_id": "1", "user_id": "usr-001", "created_at": "2026-07-25T09:15:00Z",
+    "class_ids": '["email_summary"]', "class_names": '["Сводка по письмам"]',
     "confidence": "0.8", "summary": "Резюме", "goal": "Цель", "intent": "Намерение",
     "is_work": "true", "automation_candidate": "true", "periodicity": "daily",
     "complexity": "medium", "steps_requested": "2", "integrations": '["Exchange"]',
@@ -101,10 +102,10 @@ class LoaderTest(DashboardTestCase):
 
 
 class MetricsTest(DashboardTestCase):
-    def test_seven_kpi_cards(self):
+    def test_five_kpi_cards(self):
         cards = metrics.kpis(self.frame, 0.5)
 
-        self.assertEqual(len(cards), 7)
+        self.assertEqual(len(cards), 5)
         self.assertTrue(all(card.value for card in cards))
 
     def test_every_kpi_carries_a_formula_for_its_tooltip(self):
@@ -113,17 +114,96 @@ class MetricsTest(DashboardTestCase):
                 self.assertTrue(card.formula, "a number on a projector must state its source")
                 self.assertIn(card.formula, card.tooltip)
 
-    def test_cost_is_labelled_with_its_unit(self):
-        cost = next(c for c in metrics.kpis(self.frame, 0.5) if "Стоимость" in c.label)
+    def test_token_kpi_is_measured_and_does_not_depend_on_the_cost_model(self):
+        """Token consumption comes from logs, not from an invented TCO."""
 
-        self.assertEqual(cost.unit, metrics.COST_UNIT)
-        self.assertIn(metrics.COST_RATE_NOTE, cost.formula)
-        self.assertIn("не стоимость владения", cost.caveat)
+        cheap = metrics.CostModel(support_fte=1.0)
+        rich = metrics.CostModel(support_fte=4.0)
 
-    def test_failure_kpi_does_not_claim_success(self):
-        failure = next(c for c in metrics.kpis(self.frame, 0.5) if "сбоев" in c.label)
+        def value(cards, needle):
+            return next(c for c in cards if needle in c.label).value
 
-        self.assertIn("не означает успешно выполненную задачу", failure.caveat)
+        cheap_cards = metrics.kpis(self.frame, 0.5, model=cheap)
+        rich_cards = metrics.kpis(self.frame, 0.5, model=rich)
+
+        self.assertEqual(value(cheap_cards, "Потреблено токенов"), value(rich_cards, "Потреблено токенов"))
+        self.assertNotEqual(value(cheap_cards, "безубыточности"), value(rich_cards, "безубыточности"))
+        token_card = next(c for c in cheap_cards if "Потреблено токенов" in c.label)
+        self.assertNotIn("₽", token_card.tooltip)
+        self.assertIn("без перевода в рубли", token_card.caveat)
+
+    def test_breakeven_is_exactly_where_benefit_equals_cost(self):
+        """The card and the crossing on the chart must be one number."""
+
+        model = metrics.CostModel()
+        threshold = metrics.breakeven_minutes(self.frame, model.monthly_rub)
+        benefit = metrics.benefit_rub(metrics.monthly_requests(self.frame), threshold)
+
+        self.assertAlmostEqual(benefit, model.monthly_rub, places=4)
+
+    def test_cost_per_million_tokens_falls_when_traffic_doubles(self):
+        """It is a unit cost at a utilisation, not a property of the hardware."""
+
+        doubled = pd.concat([self.frame, self.frame.assign(request_id="dup")])
+        model = metrics.CostModel()
+
+        self.assertLess(
+            metrics.cost_per_million_tokens(doubled, model),
+            metrics.cost_per_million_tokens(self.frame, model),
+        )
+
+    def test_breakeven_states_that_its_inputs_come_from_outside_the_contract(self):
+        card = next(c for c in metrics.kpis(self.frame, 0.5) if "безубыточности" in c.label)
+
+        self.assertEqual(card.unit, "мин/запрос")
+        self.assertIn(str(metrics.MINUTE_RATE_RUB), card.formula)
+        self.assertIn("снаружи контракта", card.caveat)
+        self.assertIn("не утверждает", card.caveat)
+
+    def test_breakeven_scales_the_sample_to_a_month(self):
+        """A month of TCO must not be divided by a few days of requests."""
+
+        threshold = metrics.breakeven_minutes(self.frame, tco_rub=500_000.0)
+        per_month = metrics.monthly_requests(self.frame)
+
+        self.assertGreater(per_month, len(self.frame))
+        self.assertAlmostEqual(
+            threshold,
+            500_000.0 / (per_month * metrics.MINUTE_RATE_RUB * metrics.CAPTURE_RATE),
+            places=6,
+        )
+
+    def test_fte_card_changes_with_the_visible_time_assumption(self):
+        low = next(
+            c for c in metrics.kpis(self.frame, 0.5, minutes_saved=5)
+            if "высвобождённого" in c.label
+        )
+        high = next(
+            c for c in metrics.kpis(self.frame, 0.5, minutes_saved=15)
+            if "высвобождённого" in c.label
+        )
+
+        self.assertLess(float(low.value), float(high.value))
+        self.assertIn("ползунком", low.caveat)
+        self.assertIn("5 мин", low.detail)
+
+    def test_adoption_reports_shape_not_penetration(self):
+        card = next(c for c in metrics.kpis(self.frame, 0.5) if "Активных" in c.label)
+
+        self.assertIn("не MAU", card.caveat)
+        self.assertEqual(card.value, str(self.frame["user_id"].nunique()))
+
+    def test_usage_card_carries_dialogues_and_tool_calls(self):
+        card = next(c for c in metrics.kpis(self.frame, 0.5) if "Обращения" in c.label)
+
+        self.assertEqual(card.value, str(len(self.frame)))
+        self.assertIn(str(int(self.frame["tool_calls"].sum())), card.detail)
+
+    def test_usage_ranking_attributes_tokens_to_users(self):
+        ranking = metrics.usage_ranking(self.frame, "user_id", "tokens")
+
+        self.assertEqual(int(ranking["tokens"].sum()), int(self.frame["total_tokens"].sum()))
+        self.assertEqual(set(ranking["key"]), set(self.frame["user_id"]))
 
     def test_kpis_on_empty_frame_do_not_crash(self):
         cards = metrics.kpis(self.frame.iloc[0:0], 0.5)
@@ -233,6 +313,13 @@ class ChartTest(DashboardTestCase):
         return {
             "volume": charts.volume_bar(metrics.top_use_cases(self.frame), theme),
             "classes": charts.volume_bar(metrics.top_classes(self.frame), theme),
+            "usage": charts.usage_bar(
+                metrics.usage_ranking(self.frame, "user_id", "tokens"),
+                theme,
+                "user_id",
+                "tokens",
+                total=float(self.frame["total_tokens"].sum()),
+            ),
             "periodicity": charts.periodicity_heatmap(
                 metrics.use_case_periodicity(self.frame), theme
             ),
@@ -398,6 +485,14 @@ class SelectionTest(DashboardTestCase):
         )
 
         self.assertEqual(len(result), len(self.frame))
+
+    def test_selection_on_a_user_narrows_to_that_users_dialogues(self):
+        chosen = self.frame["user_id"].iloc[0]
+        result = filters.apply_selection(
+            self.frame, {"column": "user_id", "value": chosen}
+        )
+
+        self.assertTrue((result["user_id"] == chosen).all())
 
     def test_unknown_or_missing_selection_is_a_no_op(self):
         for selection in (None, {}, {"column": "summary", "value": "x"}):

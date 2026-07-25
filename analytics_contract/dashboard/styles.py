@@ -140,17 +140,19 @@ body { margin: 0; background: var(--page); }
 
 /* ---------- KPI ------------------------------------------------------- */
 
-/* Twelve columns so four cards (span 3) and three cards (span 4) each fill a
-   row exactly. Seven equal cards in one strip is what made the numbers small. */
+/* Twelve columns, three cards per row at span 4. With the five-card set that
+   leaves two on the second row, which are widened to span 6 so the row fills
+   exactly — a lone trailing card reads as something the layout forgot.
+   Seven equal cards in one strip is what made the numbers small. */
 .kpi-row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; margin-bottom: 18px; }
 .kpi-card {
-  grid-column: span 3;
+  grid-column: span 4;
   background: var(--surface-1); border: 1px solid var(--border);
   border-radius: 10px; padding: 14px 16px 15px;
   display: flex; flex-direction: column; gap: 2px;
   box-shadow: var(--shadow); min-width: 0;
 }
-.kpi-card:nth-child(n+5) { grid-column: span 4; }
+.kpi-card:nth-child(n+4) { grid-column: span 6; }
 .kpi-head { display: flex; align-items: baseline; gap: 6px; justify-content: space-between; }
 .kpi-label { font-size: 13px; color: var(--text-secondary); line-height: 1.25; }
 .kpi-value {
@@ -175,8 +177,12 @@ body { margin: 0; background: var(--page); }
 .info:hover, .info:focus-visible { color: var(--text-primary); border-color: var(--accent); }
 .info::after {
   content: attr(data-tip);
-  position: absolute; top: calc(100% + 8px); right: -4px; z-index: 40;
-  width: max-content; max-width: 300px;
+  /* Anchored by its LEFT edge so the box opens into the page. Anchoring it
+     right put the tip of a left-hand card 300px off the left of the viewport,
+     where it was simply unreadable. `.info--end` flips it for controls that
+     sit near the right edge. */
+  position: absolute; top: calc(100% + 8px); left: -4px; right: auto; z-index: 40;
+  width: max-content; max-width: min(320px, calc(100vw - 32px));
   padding: 9px 11px; border-radius: 8px;
   background: var(--surface-2); color: var(--text-primary);
   border: 1px solid var(--border-strong); box-shadow: 0 6px 20px rgba(0,0,0,0.18);
@@ -184,6 +190,7 @@ body { margin: 0; background: var(--page); }
   white-space: pre-line; letter-spacing: 0;
   opacity: 0; visibility: hidden; transition: opacity 120ms ease;
 }
+.info--end::after { left: auto; right: -4px; }
 .info:hover::after, .info:focus-visible::after { opacity: 1; visibility: visible; }
 
 /* ---------- filters --------------------------------------------------- */
@@ -275,6 +282,29 @@ body { margin: 0; background: var(--page); }
 .card-toggle label { margin-right: 16px; cursor: pointer; }
 .card-toggle input { margin-right: 5px; }
 .card-hint { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+.chart-controls {
+  display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap;
+  margin: 6px 0 2px;
+}
+.chart-control { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.control-label {
+  color: var(--muted); font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.assumption-control {
+  max-width: 620px; padding: 8px 8px 18px; margin: 4px 0 2px;
+}
+.assumption-control .control-label { display: block; margin-bottom: 11px; }
+.assumption-control .rc-slider-rail { background: var(--grid); }
+.assumption-control .rc-slider-track { background: var(--accent); }
+.assumption-control .rc-slider-handle {
+  border-color: var(--accent); background: var(--surface-1); opacity: 1;
+}
+.assumption-control .rc-slider-mark-text { color: var(--muted); font-size: 11px; }
+.assumption-control .rc-slider-tooltip-inner {
+  background: var(--text-primary); color: var(--surface-1); box-shadow: none;
+}
+.assumption-control .rc-slider-tooltip-arrow { border-top-color: var(--text-primary); }
 
 /* ---------- drill-down table ------------------------------------------ */
 
@@ -352,16 +382,16 @@ body { margin: 0; background: var(--page); }
   .viz-root { padding: 16px 16px 32px; }
   .chart-grid { grid-template-columns: 1fr; }
   .filter-grid { grid-template-columns: repeat(3, 1fr); }
-  /* The 4 + 3 KPI grid survives down to 1024; only below that does a card get
-     too narrow for its label, and only then does it drop to three across. */
+  /* The 3 + 2 KPI grid survives down to 1024; only below that does a card get
+     too narrow for its label, and only then does it drop to two across. */
   .kpi-value { font-size: 30px; }
 }
 @media (max-width: 1000px) {
-  .kpi-card, .kpi-card:nth-child(n+5) { grid-column: span 4; }
+  .kpi-card, .kpi-card:nth-child(n+4) { grid-column: span 6; }
 }
 @media (max-width: 820px) {
   .filter-grid { grid-template-columns: repeat(2, 1fr); }
-  .kpi-card, .kpi-card:nth-child(n+5) { grid-column: span 6; }
+  .kpi-card, .kpi-card:nth-child(n+4) { grid-column: span 12; }
 }
 
 @media (prefers-reduced-motion: reduce) {

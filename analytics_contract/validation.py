@@ -21,12 +21,14 @@ import json
 import math
 import statistics
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
 from analytics_contract.registry import Vocabulary
 from analytics_contract.schema import (
     BOOL_COLUMNS,
+    CREATED_AT_FORMAT,
     ENUM_VALUES,
     FALSE_LITERALS,
     LIST_COLUMNS,
@@ -296,6 +298,7 @@ class _RowValidator:
 
     def run(self) -> None:
         self._check_request_id()
+        self._check_created_at()
         self._check_lists()
         self._check_vocabularies()
         self._check_classes()
@@ -310,6 +313,29 @@ class _RowValidator:
         if not self.request_id:
             self.add("request_id", ERROR, "request_id_blank", "request_id must be a non-empty string")
         self.values["request_id"] = self.request_id
+
+    def _check_created_at(self) -> None:
+        """Parse ``created_at`` as a UTC instant, rejecting anything looser.
+
+        The value is stored parsed so the dashboard never re-parses strings and
+        cannot disagree with the validator about what a timestamp means.
+        """
+
+        raw = (self.row.get("created_at") or "").strip()
+        if not raw:
+            self.add("created_at", ERROR, "created_at_blank", "created_at must be a UTC timestamp")
+            return
+        try:
+            self.values["created_at"] = datetime.strptime(raw, CREATED_AT_FORMAT).replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError:
+            self.add(
+                "created_at",
+                ERROR,
+                "created_at_malformed",
+                f"expected {CREATED_AT_FORMAT} in UTC, got {raw!r}",
+            )
 
     def _check_lists(self) -> None:
         for column in sorted(LIST_COLUMNS):
@@ -678,8 +704,8 @@ def validate_analytics(
             "for shape and uniqueness only. Pass the project registries to close them."
         )
     result.limitations.append(
-        "The contract carries no timestamp and no request_text, so time-series and "
-        "verbatim-request checks are out of scope by construction."
+        "The contract carries no request_text, so verbatim-request checks are out of "
+        "scope by construction."
     )
     result.limitations.append(
         "tool_tokens counts only messages with role='tool'. A zero total means no such "
@@ -759,9 +785,45 @@ def validate_analytics(
     result.issues.extend(
         _outlier_issues(total_token_rows, "total_tokens", "tokens_outlier", outlier_factor, "total tokens")
     )
+    result.limitations.extend(_derived_limitations(total_token_rows))
 
     result.issues.sort(key=lambda issue: (issue.line, issue.field, issue.code, issue.request_id))
     return result
+
+
+def _derived_limitations(rows: list[tuple[int, dict[str, Any]]]) -> list[str]:
+    """Limitations the file itself proves, rather than ones assumed up front.
+
+    Both checks below exist because the numbers they qualify look informative
+    and are not. They are emitted from the data so that a future export which
+    fixes the underlying pipeline stops carrying the caveat automatically.
+    """
+
+    limitations: list[str] = []
+
+    ratios = {
+        round(values["estimated_cost"] / values["total_tokens"], 12)
+        for _, values in rows
+        if values.get("total_tokens") and isinstance(values.get("estimated_cost"), float)
+    }
+    if len(ratios) == 1:
+        rate = next(iter(ratios))
+        limitations.append(
+            f"estimated_cost is exactly total_tokens * {rate:g} on every row, so it carries "
+            "no information the token count does not already carry. Any ranking or "
+            "concentration computed on cost is the same ranking computed on volume, and "
+            "a per-model or per-tier tariff is needed before cost can be read as cost."
+        )
+
+    dates = {values["created_at"].date() for _, values in rows if values.get("created_at")}
+    if len(dates) == 1:
+        limitations.append(
+            f"Every created_at falls on {next(iter(dates))}, so the export supports an "
+            "hour-of-day load profile but no trend, no retention and no monthly active "
+            "users. Any figure quoted per month is an extrapolation from a single day."
+        )
+
+    return limitations
 
 
 def write_reports(result: ValidationResult, output_dir: str | Path) -> tuple[Path, Path]:

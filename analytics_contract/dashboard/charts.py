@@ -77,6 +77,19 @@ def _empty(theme: Theme, height: int = 340) -> go.Figure:
     return _base(figure, theme, height=height)
 
 
+def _padded(values, share: float, top_share: float | None = None) -> list[float]:
+    """Axis range with headroom, for charts whose marks have pixel size.
+
+    The top is padded separately because a label drawn above a mark needs more
+    room than the mark itself: at the plot edge the ascenders get clipped and
+    "простой" reads as "простои".
+    """
+
+    low, high = float(min(values)), float(max(values))
+    span = (high - low) or high or 1.0
+    return [low - span * share, high + span * (share if top_share is None else top_share)]
+
+
 def _mark_colours(values, selected, theme: Theme, hue: str) -> list[str]:
     """One colour per mark, dimming everything outside the selection."""
 
@@ -122,6 +135,77 @@ def volume_bar(
     )
     figure.update_xaxes(showgrid=True, gridcolor=theme.grid)
     figure.update_yaxes(showgrid=False, automargin=True)
+    return _base(figure, theme, height=420)
+
+
+def usage_bar(
+    data: pd.DataFrame,
+    theme: Theme,
+    dimension: str,
+    metric: str,
+    selected: str | None = None,
+    total: float | None = None,
+) -> go.Figure:
+    """Interactive usage ranking by scenario, class or pseudonymous user."""
+
+    if data.empty:
+        return _empty(theme, 420)
+
+    metric_labels = {
+        "dialogues": ("Диалоги", "диалогов"),
+        "tokens": ("Токены", "токенов"),
+        "tool_calls": ("Вызовы инструментов", "вызовов"),
+    }
+    axis_title, value_label = metric_labels[metric]
+    data = data.sort_values(metric)
+    names = list(data["key"])
+    values = list(data[metric])
+    denominator = float(total or sum(values))
+    shares = [value / denominator if denominator else 0.0 for value in values]
+
+    def compact(value: float) -> str:
+        if value >= 1_000_000:
+            return f"{value / 1_000_000:.1f} млн".replace(".", ",")
+        if value >= 1_000:
+            return f"{value / 1_000:.0f} тыс."
+        return f"{value:,.0f}".replace(",", " ")
+
+    figure = go.Figure(
+        go.Bar(
+            x=values,
+            y=labels.axis(names, dimension),
+            orientation="h",
+            marker=dict(
+                color=_mark_colours(names, selected, theme, theme.series[0]),
+                line=dict(color=theme.surface, width=2),
+            ),
+            text=[compact(value) for value in values],
+            textposition="outside",
+            textfont=dict(color=theme.text_secondary, size=LABEL_SIZE),
+            customdata=list(
+                zip(
+                    labels.show_all(names, dimension),
+                    data["dialogues"],
+                    data["tokens"],
+                    data["tool_calls"],
+                    shares,
+                    names,
+                )
+            ),
+            hovertemplate=(
+                "<b>%{customdata[0]}</b>"
+                f"<br>{axis_title}: %{{x:,.0f}}"
+                "<br>Диалогов: %{customdata[1]:,.0f}"
+                "<br>Токенов: %{customdata[2]:,.0f}"
+                "<br>Вызовов инструментов: %{customdata[3]:,.0f}"
+                f"<br>Доля по показателю: %{{customdata[4]:.1%}}"
+                "<extra></extra>"
+            ),
+        )
+    )
+    figure.update_xaxes(title_text=axis_title, showgrid=True, gridcolor=theme.grid)
+    figure.update_yaxes(showgrid=False, automargin=True)
+    figure.update_layout(separators=", ")
     return _base(figure, theme, height=420)
 
 
@@ -388,3 +472,222 @@ def security_heatmap(matrix: pd.DataFrame, theme: Theme) -> go.Figure:
     figure.update_xaxes(tickangle=0, automargin=True)
     figure.update_yaxes(showgrid=False, automargin=True)
     return _base(figure, theme, height=400)
+
+
+def lorenz_curve(data: pd.DataFrame, theme: Theme, gini: float) -> go.Figure:
+    """Chart A — how evenly the agent is used across employees.
+
+    A ranked bar per user was rejected: twenty-five bars of near-equal height
+    read as noise, and the question is about the shape of the distribution, not
+    about which pseudonymous id is on top. The Lorenz form answers it with one
+    line, carries its own reference (the diagonal is perfectly even use) and
+    keeps a single scale, since both axes are shares of their own total.
+    """
+
+    if data.empty:
+        return _empty(theme)
+    figure = go.Figure()
+    figure.add_scatter(
+        x=[0, 1],
+        y=[0, 1],
+        mode="lines",
+        name="Равномерное использование",
+        line=dict(color=theme.guide, width=2, dash="dash"),
+        hovertemplate="Равномерно: %{y:.0%}<extra></extra>",
+    )
+    figure.add_scatter(
+        x=data["users"],
+        y=data["dialogues"],
+        mode="lines",
+        name="Фактическое",
+        line=dict(color=theme.series[0], width=2),
+        fill="tonexty",
+        fillcolor="rgba(42,120,214,0.10)",
+        customdata=data["label"],
+        hovertemplate=(
+            "Нижние %{x:.0%} пользователей<br>дают %{y:.0%} диалогов<extra></extra>"
+        ),
+    )
+    figure.add_annotation(
+        x=0.02, y=0.97, xref="paper", yref="paper", showarrow=False, align="left",
+        text=f"Джини {gini:.2f} — чем ближе к 0, тем ровнее распределено",
+        font=dict(color=theme.muted, size=12),
+    )
+    figure.update_xaxes(title_text="Доля пользователей, от наименее активных", tickformat=".0%")
+    figure.update_yaxes(title_text="Накопленная доля диалогов", tickformat=".0%",
+                        showgrid=True, gridcolor=theme.grid)
+    return _base(figure, theme)
+
+
+def hourly_profile(data: pd.DataFrame, theme: Theme) -> go.Figure:
+    """Chart B — dialogues by hour of day.
+
+    Drawn as a load profile and titled as one. The export covers a single date,
+    so a date axis would be one point; the hour axis is the only time structure
+    the data actually contains, and it is the one that sizes capacity.
+    """
+
+    if data.empty:
+        return _empty(theme)
+    active = data[data["count"] > 0]
+    peak = int(active["count"].max()) if not active.empty else 0
+    figure = go.Figure(
+        go.Bar(
+            x=[f"{hour:02d}" for hour in data["hour"]],
+            y=data["count"],
+            marker=dict(
+                # The peak hour is the one the reader acts on, so it keeps the
+                # series hue and the rest recede. This is emphasis, not a
+                # second category: no legend entry is created for it.
+                color=[theme.series[0] if value == peak and peak else theme.dim
+                       for value in data["count"]],
+                line=dict(color=theme.surface, width=2),
+            ),
+            hovertemplate="<b>%{x}:00 UTC</b><br>Диалогов: %{y}<extra></extra>",
+        )
+    )
+    figure.update_xaxes(title_text="Час суток, UTC")
+    figure.update_yaxes(title_text="Диалогов")
+    return _base(figure, theme)
+
+
+def automation_bubbles(data: pd.DataFrame, theme: Theme) -> go.Figure:
+    """Chart C — where automation should start.
+
+    Volume on one axis, median requested steps on the other, bubble area for
+    the dialogue count and the automation share written on each bubble. A
+    heatmap was rejected here: with four live cells the colour channel would
+    carry the whole message and small cells would look like large ones, whereas
+    area makes the size of each pocket of work legible directly.
+    """
+
+    if data.empty:
+        return _empty(theme)
+    company = {True: "с корпданными", False: "без корпданных"}
+    figure = go.Figure()
+    for flag, colour in ((True, theme.series[0]), (False, theme.series[1])):
+        subset = data[data["uses_company_data"] == flag]
+        if subset.empty:
+            continue
+        figure.add_scatter(
+            x=subset["volume"],
+            y=subset["automation"],
+            mode="markers+text",
+            name=company[flag],
+            text=labels.show_all(subset["complexity"], "complexity"),
+            textposition="top center",
+            textfont=dict(color=theme.text_secondary, size=LABEL_SIZE),
+            marker=dict(
+                color=colour,
+                size=subset["volume"],
+                sizemode="area",
+                sizeref=max(data["volume"]) / 55**2,
+                sizemin=10,
+                line=dict(color=theme.surface, width=2),
+            ),
+            customdata=list(zip(
+                labels.show_all(subset["complexity"], "complexity"),
+                [company[flag]] * len(subset),
+                subset["steps"],
+            )),
+            hovertemplate=(
+                "<b>%{customdata[0]}, %{customdata[1]}</b><br>Диалогов: %{x}"
+                "<br>Кандидатов на автоматизацию: %{y:.0%}"
+                "<br>Шагов в запросе, медиана: %{customdata[2]:.0f}<extra></extra>"
+            ),
+        )
+    figure.update_xaxes(
+        title_text="Диалогов в группе",
+        showgrid=True,
+        gridcolor=theme.grid,
+        # Bubbles are sized in pixels, so a range ending at the largest value
+        # clips the widest circle and the label above it. The padding is a
+        # share of the span rather than a constant, so it holds under filtering.
+        range=_padded(data["volume"], 0.30),
+    )
+    figure.update_yaxes(
+        title_text="Доля кандидатов на автоматизацию",
+        tickformat=".0%",
+        range=_padded(data["automation"], 0.45, top_share=0.70),
+    )
+    return _base(figure, theme)
+
+
+def economics_curve(
+    data: pd.DataFrame,
+    theme: Theme,
+    threshold: float,
+    tco_rub: float,
+    assumed_minutes: float | None = None,
+    assumed_fte: float | None = None,
+) -> go.Figure:
+    """Chart D — benefit against cost, over the assumption nobody can measure.
+
+    A single ROI number was rejected. Value of time saved is the product of a
+    measured volume and an assumed minutes-per-request, and quoting one figure
+    buries the assumption inside it. Putting the assumption on the x-axis makes
+    the shape of the argument visible: cost is flat, benefit is a ray from the
+    origin, and the only question left for the room is which point on that ray
+    they believe. The crossing is the break-even card's own number.
+    """
+
+    if data.empty:
+        return _empty(theme, 380)
+    figure = go.Figure()
+    figure.add_scatter(
+        x=data["minutes"],
+        y=data["cost"],
+        mode="lines",
+        name="Затраты, A",
+        line=dict(color=theme.series[1], width=2),
+        hovertemplate="Затраты: %{y:,.0f} ₽/мес<extra></extra>",
+    )
+    figure.add_scatter(
+        x=data["minutes"],
+        y=data["benefit"],
+        mode="lines",
+        name="Выгода, B",
+        line=dict(color=theme.series[0], width=2),
+        hovertemplate=(
+            "При %{x:.1f} мин на запрос<br>выгода: %{y:,.0f} ₽/мес<extra></extra>"
+        ),
+    )
+    figure.add_vline(x=threshold, line=dict(color=theme.guide, width=2, dash="dash"))
+    figure.add_annotation(
+        x=threshold,
+        y=1.0,
+        yref="paper",
+        yanchor="top",
+        xanchor="left",
+        showarrow=False,
+        align="left",
+        text=f"  безубыточность: {threshold:.1f} мин/запрос<br>"
+             f"  правее — B больше A",
+        font=dict(color=theme.text_secondary, size=LABEL_SIZE),
+    )
+    if assumed_minutes is not None:
+        nearest = data.iloc[(data["minutes"] - assumed_minutes).abs().argsort()[:1]]
+        if not nearest.empty:
+            benefit = float(nearest["benefit"].iloc[0])
+            figure.add_scatter(
+                x=[assumed_minutes],
+                y=[benefit],
+                mode="markers",
+                name="Выбранное допущение",
+                marker=dict(
+                    color=theme.series[0],
+                    size=11,
+                    line=dict(color=theme.surface, width=2),
+                ),
+                hovertemplate=(
+                    f"<b>{assumed_minutes:g} мин на запрос</b><br>"
+                    f"Высвобождено: {assumed_fte or 0:.2f} FTE/мес"
+                    "<br>Оценка выгоды: %{y:,.0f} ₽/мес<extra></extra>"
+                ),
+            )
+    figure.update_xaxes(title_text="Допущение: минут экономии на один запрос")
+    figure.update_yaxes(
+        title_text="₽ в месяц", showgrid=True, gridcolor=theme.grid, tickformat=",.0f"
+    )
+    figure.update_layout(separators=", ")
+    return _base(figure, theme, height=380)

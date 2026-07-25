@@ -11,6 +11,8 @@ not because a translation is missing somewhere in a chart.
 
 from __future__ import annotations
 
+import re
+
 #: The clustering step leaves HDBSCAN noise under this literal. It is a real
 #: value in the data, not an absence, so it is shown rather than hidden.
 UNCLUSTERED = "unclustered"
@@ -140,11 +142,10 @@ def truncate(text: str, limit: int = AXIS_LIMIT) -> str:
 #: translated here rather than in `validation.py` — the validator's own output
 #: has to stay exactly as the contract tests expect it.
 LIMITATION = {
-    "The contract carries no timestamp and no request_text, so time-series and "
-    "verbatim-request checks are out of scope by construction.":
-        "В контракте нет ни отметки времени, ни исходного текста запроса, поэтому "
-        "динамика во времени и проверки по дословному запросу невозможны "
-        "по построению.",
+    "The contract carries no request_text, so verbatim-request checks are out of "
+    "scope by construction.":
+        "В контракте нет исходного текста запроса, поэтому проверки по дословному "
+        "запросу невозможны по построению.",
     "tool_tokens counts only messages with role='tool'. A zero total means no such "
     "message was present in the source logs, not that tool execution was free.":
         "tool_tokens считает только сообщения с ролью tool. Нулевая сумма означает, "
@@ -166,11 +167,37 @@ LIMITATION = {
         "только на форму и уникальность значений.",
 }
 
+#: Limitations the validator derives from the data carry a measured value in the
+#: middle of the sentence, so they are matched on their opening words and the
+#: value is re-inserted rather than looked up.
+LIMITATION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"estimated_cost is exactly total_tokens \* (\S+) on every row"),
+        "estimated_cost равен total_tokens × {0} на каждой строке, то есть не несёт "
+        "ничего сверх числа токенов. Любой рейтинг или концентрация, посчитанные "
+        "по стоимости, — это тот же рейтинг по объёму. Чтобы читать эту колонку как "
+        "деньги, нужен тариф по моделям, а не одна константа.",
+    ),
+    (
+        re.compile(r"Every created_at falls on (\S+),"),
+        "Все отметки времени приходятся на {0}, поэтому выгрузка поддерживает профиль "
+        "нагрузки по часам, но не тренд, не удержание и не месячную аудиторию. Любая "
+        "цифра «в месяц» — это экстраполяция одних суток.",
+    ),
+)
+
 
 def limitation(text: str) -> str:
     """Russian caption for a validator limitation; unknown text passes through."""
 
-    return LIMITATION.get(" ".join(str(text).split()), str(text))
+    normalized = " ".join(str(text).split())
+    if normalized in LIMITATION:
+        return LIMITATION[normalized]
+    for pattern, template in LIMITATION_PATTERNS:
+        match = pattern.search(normalized)
+        if match:
+            return template.format(*match.groups())
+    return normalized
 
 
 def axis(values, column: str | None = None, limit: int = AXIS_LIMIT) -> list[str]:

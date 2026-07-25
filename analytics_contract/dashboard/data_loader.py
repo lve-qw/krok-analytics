@@ -14,7 +14,12 @@ from pathlib import Path
 import pandas as pd
 
 from analytics_contract.registry import load_project_registries
-from analytics_contract.schema import BOOL_COLUMNS, LIST_COLUMNS, NON_NEGATIVE_INT_COLUMNS
+from analytics_contract.schema import (
+    BOOL_COLUMNS,
+    CREATED_AT_FORMAT,
+    LIST_COLUMNS,
+    NON_NEGATIVE_INT_COLUMNS,
+)
 from analytics_contract.validation import ValidationResult, validate_analytics
 
 
@@ -77,6 +82,10 @@ def load(
     frame["total_tokens"] = (
         frame["user_tokens"] + frame["assistant_tokens"] + frame["tool_tokens"]
     )
+
+    # The validator has already accepted this exact UTC shape, so the parse
+    # here cannot disagree with it about what a timestamp means.
+    frame["created_at"] = pd.to_datetime(frame["created_at"], format=CREATED_AT_FORMAT, utc=True)
 
     return Dataset(
         frame=frame, validation=result, analytics_path=analytics, classes_path=classes

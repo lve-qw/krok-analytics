@@ -22,6 +22,8 @@ CLASSES = [
 
 VALID_ROW = {
     "request_id": "req-001",
+    "user_id": "usr-001",
+    "created_at": "2026-07-25T09:15:00Z",
     "class_ids": '["email_summary"]',
     "class_names": '["Сводка по письмам"]',
     "confidence": "0.87",

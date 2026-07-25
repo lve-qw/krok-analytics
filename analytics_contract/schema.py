@@ -17,6 +17,8 @@ SCHEMA_VERSION = "analytics.csv/v1"
 #: the validator checks membership, not position.
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "request_id",
+    "user_id",
+    "created_at",
     "class_ids",
     "class_names",
     "confidence",
@@ -86,6 +88,7 @@ NON_NEGATIVE_INT_COLUMNS: tuple[str, ...] = (
 
 #: Free-text columns that must be present and must not be whitespace-only.
 NON_BLANK_TEXT_COLUMNS: tuple[str, ...] = (
+    "user_id",
     "summary",
     "goal",
     "intent",
@@ -116,6 +119,11 @@ FALSE_LITERALS: frozenset[str] = frozenset({"false"})
 
 #: Literals accepted as "no failure reason" in ``failure_reason``.
 NULL_LITERALS: frozenset[str] = frozenset({"", "null"})
+
+#: ``created_at`` is required to be a UTC instant in this exact shape. A looser
+#: parser would accept naive local timestamps from a different writer and the
+#: hour-of-day profile would silently mix time zones.
+CREATED_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 #: Columns exposed by the drill-down table (task §6.1). Declared here so the
 #: dashboard cannot drift from the validated contract.

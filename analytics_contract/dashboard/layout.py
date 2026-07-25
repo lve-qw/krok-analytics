@@ -68,16 +68,17 @@ TABS = (
 FONT_STACK = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
 
-def _info(text: str) -> html.Span:
+def _info(text: str, align: str = "start") -> html.Span:
     """Hover note carrying a formula and its caveats.
 
     A number on a projector cannot be questioned out loud, so the answer to
-    "where is that from?" travels with it.
+    "where is that from?" travels with it. `align="end"` opens the note
+    leftwards, for the few markers that sit near the right edge of the page.
     """
 
     return html.Span(
         "?",
-        className="info",
+        className="info info--end" if align == "end" else "info",
         tabIndex="0",
         **{"data-tip": text, "aria-label": text},
     )
@@ -95,22 +96,27 @@ def _card_head(title: str, tip: str = "") -> html.Div:
 # --------------------------------------------------------------------------
 
 
-def provenance_strip(counts: dict | None) -> html.Div:
+def provenance_strip(counts: dict | None, demo_badge: bool = False) -> html.Div:
     """Where the numbers came from, stated before any number is shown.
 
-    The DEMO badge alone says "do not trust this". The chain says something
-    more useful: we know exactly how many records went in, how many are on
-    screen, and how many we dropped and why.
+    The row chain is the part that earns trust: we know exactly how many
+    records went in, how many are on screen, and how many we dropped and why.
+    The synthetic-data badge is off by default — every team in the case was
+    handed the same generated dataset, so the label distinguishes nobody and
+    only reads as a disclaimer on our own numbers. `--demo-badge` restores it
+    for any run where the audience does not already know the provenance.
     """
 
-    children = [
-        html.Span("DEMO / SYNTHETIC DATA", className="banner-tag"),
-        html.Span(
-            "Данные синтетические. Частоты порождены генератором и не являются "
-            "наблюдаемым спросом.",
-            className="provenance-text",
-        ),
-    ]
+    children = []
+    if demo_badge:
+        children += [
+            html.Span("DEMO / SYNTHETIC DATA", className="banner-tag"),
+            html.Span(
+                "Данные синтетические. Частоты порождены генератором и не являются "
+                "наблюдаемым спросом.",
+                className="provenance-text",
+            ),
+        ]
     if counts:
         children.append(
             html.Div(
@@ -250,31 +256,91 @@ def _chart_card(chart_id, title, subtitle, tip="", extra=None, wide=False) -> ht
 
 
 def overview_panel() -> html.Div:
+    """Five cards and four charts.
+
+    The three charts answer three different questions — who uses it, when they
+    use it, and what to build next — so none of them can be read off another.
+    Charts driven by `estimated_cost` were moved off this screen: that column
+    is the token count times a constant, so on the first screen it would repeat
+    the volume chart in different units.
+    """
+
     return html.Div(
         [
             html.Div(id="kpi-container"),
             html.Div(
                 [
                     _chart_card(
-                        "chart-volume",
-                        "Топ сценариев по объёму",
-                        "Что запрашивают чаще всего. Клик по столбцу выбирает сценарий "
-                        "и фильтрует вкладку «Записи».",
-                        tip="Частота use_case среди отфильтрованных диалогов.\n\n"
-                            "В режиме «Классы» считается по class_names — разметка "
-                            "многозначная, поэтому доли в сумме дают больше 100%.",
-                        extra=dcc.RadioItems(
-                            id="volume-dimension",
-                            options=[
-                                {"label": " Сценарии", "value": "use_case"},
-                                {"label": " Классы", "value": "class_names"},
+                        "chart-adoption",
+                        "Насколько равномерно пользуются агентом",
+                        "Пунктир — как выглядело бы одинаковое использование всеми. "
+                        "Чем сильнее провис, тем больше это пилот энтузиастов, а не "
+                        "внедрение.",
+                        tip="Кривая Лоренца по числу диалогов на пользователя: "
+                            "по X — доля пользователей от наименее активных, по Y — "
+                            "накопленная доля диалогов. Джини — площадь между кривой "
+                            "и диагональю.\n\n"
+                            "Знаменатель — только те, кто уже писал агенту: списка "
+                            "имеющих доступ в контракте нет, поэтому охват в процентах "
+                            "от штата посчитать нельзя.",
+                    ),
+                    _chart_card(
+                        "chart-hourly",
+                        "Профиль нагрузки по часам",
+                        "Когда приходит нагрузка — это размер пика, под который нужны "
+                        "лимиты и квоты.",
+                        tip="Число диалогов по часу created_at, UTC.\n\n"
+                            "Это профиль суток, а не тренд: все отметки времени "
+                            "в выгрузке приходятся на одну дату, поэтому роста "
+                            "или падения здесь не видно и утверждать его нельзя.",
+                    ),
+                    _chart_card(
+                        "chart-economics",
+                        "Выгода против затрат",
+                        "Затраты не зависят от того, сколько агент экономит, — выгода "
+                        "зависит прямо. Выберите своё допущение о времени — карточка "
+                        "FTE и точка на графике пересчитаются вместе.",
+                        tip="Затраты A — полный TCO за месяц (сервер, электричество, "
+                            "команда поддержки). Выгода B = запросов в месяц × минут "
+                            "экономии × 52,7 ₽/мин × 0,6.\n\n"
+                            "Минуты экономии стоят по горизонтальной оси, а не спрятаны "
+                            "внутри одной цифры ROI: в контракте нет данных о том, "
+                            "сколько задача заняла бы без агента, поэтому это "
+                            "допущение читателя, а не наше измерение.\n\n"
+                            "0,6 — доля высвобожденного времени, которая превращается "
+                            "в результат, а не в паузу (полоса Forrester 50–70%).",
+                        extra=html.Div(
+                            [
+                                html.Div(
+                                    "Минут экономии на один запрос",
+                                    className="control-label",
+                                ),
+                                dcc.Slider(
+                                    id="minutes-saved",
+                                    min=0,
+                                    max=30,
+                                    step=1,
+                                    value=10,
+                                    marks={value: str(value) for value in (0, 5, 10, 15, 20, 25, 30)},
+                                    tooltip={"placement": "bottom", "always_visible": True},
+                                ),
                             ],
-                            value="use_case",
-                            inline=True,
-                            className="card-toggle",
+                            className="assumption-control",
                         ),
                         wide=True,
-                    )
+                    ),
+                    _chart_card(
+                        "chart-automation",
+                        "Где начинать автоматизацию",
+                        "Размер круга — сколько диалогов в группе, высота — какая доля "
+                        "из них помечена как автоматизируемая.",
+                        tip="Группировка по complexity × uses_company_data. По Y — "
+                            "среднее automation_candidate в группе.\n\n"
+                            "Признак ставит LLM при разборе диалога: это гипотеза "
+                            "к проверке, а не подтверждённая возможность. Группы "
+                            "меньше 5 диалогов не показаны.",
+                        wide=True,
+                    ),
                 ],
                 className="chart-grid",
             ),
@@ -288,6 +354,61 @@ def scenarios_panel() -> html.Div:
         [
             html.Div(
                 [
+                    _chart_card(
+                        "chart-volume",
+                        "Карта использования",
+                        "Один рейтинг для трёх вопросов: кто пользуется, на что уходят "
+                        "токены и где агент чаще вызывает инструменты. Клик по столбцу "
+                        "открывает соответствующие записи.",
+                        tip="Показатель суммируется по выбранному разрезу.\n\n"
+                            "В режиме «Классы» один multi-label диалог учитывается "
+                            "в каждом своём классе, поэтому доли могут суммарно "
+                            "превышать 100%. user_id показывается в "
+                            "псевдонимизированном виде.",
+                        extra=html.Div(
+                            [
+                                html.Div(
+                                    [
+                                        html.Span("Разрез", className="control-label"),
+                                        dcc.RadioItems(
+                                            id="volume-dimension",
+                                            options=[
+                                                {"label": " Сценарии", "value": "use_case"},
+                                                {"label": " Классы", "value": "class_names"},
+                                                {"label": " Пользователи", "value": "user_id"},
+                                            ],
+                                            value="use_case",
+                                            inline=True,
+                                            className="card-toggle",
+                                        ),
+                                    ],
+                                    className="chart-control",
+                                ),
+                                html.Div(
+                                    [
+                                        html.Span("Показатель", className="control-label"),
+                                        dcc.RadioItems(
+                                            id="usage-metric",
+                                            options=[
+                                                {"label": " Диалоги", "value": "dialogues"},
+                                                {"label": " Токены", "value": "tokens"},
+                                                {
+                                                    "label": " Вызовы инструментов",
+                                                    "value": "tool_calls",
+                                                },
+                                            ],
+                                            value="dialogues",
+                                            inline=True,
+                                            className="card-toggle",
+                                        ),
+                                    ],
+                                    className="chart-control",
+                                ),
+                            ],
+                            className="chart-controls",
+                        ),
+                        wide=True,
+                    ),
                     _chart_card(
                         "chart-periodicity",
                         "Сценарий × заявленная периодичность",
@@ -513,6 +634,7 @@ def build(
     limitations: list[str],
     theme: Theme,
     counts: dict | None = None,
+    demo_badge: bool = False,
 ) -> html.Div:
     return html.Div(
         [
@@ -539,7 +661,7 @@ def build(
                 ],
                 className="app-header",
             ),
-            provenance_strip(counts),
+            provenance_strip(counts, demo_badge),
             filter_bar(frame),
             # Both live in the initial layout so their callbacks resolve
             # without switching on suppress_callback_exceptions, which would

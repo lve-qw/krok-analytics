@@ -74,25 +74,61 @@ def _clicked_value(click_data) -> str | None:
     return None
 
 
-def _load_counts(analytics_path: str) -> dict | None:
-    """Row counts from the adapter's report, if it sits next to the input."""
+def _load_report(analytics_path: str) -> dict:
+    """The adapter's report, if it sits next to the input."""
 
     report = Path(analytics_path).parent / "export_report.json"
     if not report.exists():
-        return None
+        return {}
     try:
-        counts = json.loads(report.read_text(encoding="utf-8")).get("counts")
+        return json.loads(report.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return None
+        return {}
+
+
+def _load_counts(analytics_path: str) -> dict | None:
+    """Row counts from the adapter's report, if it sits next to the input."""
+
+    counts = _load_report(analytics_path).get("counts")
     if not counts or not {"input_rows", "exported_rows", "error_rows"} <= set(counts):
         return None
     return counts
 
 
-def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0.5) -> Dash:
+def create_app(
+    analytics_path: str,
+    classes_path: str,
+    low_confidence: float = 0.5,
+    cost_model: metrics.CostModel = metrics.DEFAULT_COST_MODEL,
+    demo_badge: bool = False,
+) -> Dash:
     dataset = data_loader.load(analytics_path, classes_path)
     frame = dataset.frame
     theme = get_theme("light")
+
+    # Ingest-side facts the contract file cannot carry: how many rows the
+    # adapter saw, and how many failed dialogues never made it through the
+    # analyser. Both are needed for the observability card to state the size of
+    # its own blind spot instead of implying there isn't one.
+    report = _load_report(analytics_path)
+    input_rows = (report.get("counts") or {}).get("input_rows")
+    dropped_failures = report.get("dropped_agent_failures", 0)
+
+    def _cards(
+        subset: pd.DataFrame,
+        minutes_saved: float = metrics.DEFAULT_MINUTES_SAVED,
+    ) -> list[metrics.Kpi]:
+        # Ingest counts describe the whole file, so they are only meaningful
+        # while the view is unfiltered; a filtered view reports itself.
+        whole = len(subset) == len(frame)
+        return metrics.kpis(
+            subset,
+            low_confidence,
+            model=cost_model,
+            dropped_failures=dropped_failures if whole else 0,
+            input_rows=input_rows if whole else None,
+            minutes_saved=minutes_saved,
+        )
 
     app = Dash(__name__, title="Prompt Radar")
     app.index_string = f"""<!DOCTYPE html>
@@ -103,10 +139,11 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
 
     app.layout = layout.build(
         frame,
-        metrics.kpis(frame, low_confidence),
+        _cards(frame),
         dataset.limitations,
         theme,
         _load_counts(analytics_path),
+        demo_badge,
     )
 
     filter_inputs = Input({"type": "filter", "key": ALL}, "value")
@@ -118,6 +155,10 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
     @app.callback(
         Output("kpi-container", "children"),
         Output("result-count", "children"),
+        Output("chart-adoption", "figure"),
+        Output("chart-hourly", "figure"),
+        Output("chart-economics", "figure"),
+        Output("chart-automation", "figure"),
         Output("chart-volume", "figure"),
         Output("chart-periodicity", "figure"),
         Output("chart-failure", "figure"),
@@ -128,12 +169,23 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
         Output("drilldown", "data"),
         filter_inputs,
         Input("volume-dimension", "value"),
+        Input("usage-metric", "value"),
         Input("reliability-dimension", "value"),
+        Input("minutes-saved", "value"),
         Input("theme-store", "data"),
         Input("selection-store", "data"),
         filter_states,
     )
-    def refresh(values, volume_dimension, reliability_dimension, theme_name, selection, ids):
+    def refresh(
+        values,
+        volume_dimension,
+        usage_metric,
+        reliability_dimension,
+        minutes_saved,
+        theme_name,
+        selection,
+        ids,
+    ):
         active = get_theme(theme_name)
         filtered = filters_module.apply(frame, _selections(values, ids))
         records = filters_module.apply_selection(filtered, selection)
@@ -145,12 +197,14 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
         volume_selected = chosen if chosen_column == volume_dimension else None
         scenario_selected = chosen if chosen_column == "use_case" else None
 
-        volume_data = (
-            metrics.top_use_cases(filtered)
-            if volume_dimension == "use_case"
-            else metrics.top_classes(filtered)
-        )
+        usage_data = metrics.usage_ranking(filtered, volume_dimension, usage_metric)
+        usage_total = {
+            "dialogues": len(filtered),
+            "tokens": float(filtered["total_tokens"].sum()),
+            "tool_calls": float(filtered["tool_calls"].sum()),
+        }[usage_metric]
         overlap = metrics.exposure_overlap(filtered)
+        capacity = metrics.saved_capacity(filtered, minutes_saved)
 
         count = [
             f"Показано {len(filtered)} из {len(frame)} диалогов. ",
@@ -162,9 +216,29 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
             count.insert(1, f"В таблице «Записи» — {len(records)} по выбору на диаграмме. ")
 
         return (
-            layout.kpi_row(metrics.kpis(filtered, low_confidence)),
+            layout.kpi_row(_cards(filtered, minutes_saved)),
             count,
-            charts.volume_bar(volume_data, active, volume_selected, len(filtered)),
+            charts.lorenz_curve(
+                metrics.lorenz(filtered), active, metrics.adoption(filtered)["gini"]
+            ),
+            charts.hourly_profile(metrics.hourly_load(filtered), active),
+            charts.economics_curve(
+                metrics.economics_curve(filtered, cost_model),
+                active,
+                metrics.breakeven_minutes(filtered, cost_model.monthly_rub),
+                cost_model.monthly_rub,
+                minutes_saved,
+                capacity["fte"],
+            ),
+            charts.automation_bubbles(metrics.automation_matrix(filtered), active),
+            charts.usage_bar(
+                usage_data,
+                active,
+                volume_dimension,
+                usage_metric,
+                volume_selected,
+                usage_total,
+            ),
             charts.periodicity_heatmap(metrics.use_case_periodicity(filtered), active),
             charts.failure_scatter(metrics.failure_by_use_case(filtered), active, scenario_selected),
             charts.reliability_bar(
@@ -313,6 +387,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input", default=DEFAULT_INPUT)
     parser.add_argument("--classes", default=DEFAULT_CLASSES)
     parser.add_argument("--low-confidence", type=float, default=0.5)
+    # Cost inputs live outside analytics.csv, so they are flags rather than
+    # constants: the whole economics screen recomputes from these four numbers.
+    default = metrics.DEFAULT_COST_MODEL
+    parser.add_argument("--server-capex", type=float, default=default.server_capex_rub,
+                        help="Стоимость сервера, ₽ (амортизируется за --amortization-months)")
+    parser.add_argument("--amortization-months", type=int, default=default.amortization_months)
+    parser.add_argument("--support-fte", type=float, default=default.support_fte,
+                        help="Инженеров поддержки, FTE")
+    parser.add_argument("--power-kw", type=float, default=default.power_kw,
+                        help="Потребление сервера, кВт (без учёта PUE)")
+    parser.add_argument("--licenses-rub", type=float, default=default.licenses_rub_per_month,
+                        help="Лицензии и прочее, ₽/мес")
+    parser.add_argument("--demo-badge", action="store_true",
+                        help="Показать плашку «данные синтетические»")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8050)
     parser.add_argument("--debug", action="store_true")
@@ -323,7 +411,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        app = create_app(args.input, args.classes, args.low_confidence)
+        app = create_app(
+            args.input,
+            args.classes,
+            args.low_confidence,
+            metrics.CostModel(
+                server_capex_rub=args.server_capex,
+                amortization_months=args.amortization_months,
+                power_kw=args.power_kw,
+                support_fte=args.support_fte,
+                licenses_rub_per_month=args.licenses_rub,
+            ),
+            args.demo_badge,
+        )
     except data_loader.ContractViolation as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

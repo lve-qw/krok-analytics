@@ -73,14 +73,14 @@ def options_for(frame: pd.DataFrame, spec: FilterSpec) -> list[dict[str, str]]:
     ]
 
 
-#: Columns a chart click can select on. Both are the axis of a chart the user
+#: Columns a chart click can select on. Each is the axis of a chart the user
 #: can point at; anything else would let a click mean something the chart never
 #: showed.
-SELECTABLE = {"use_case": "scalar", "class_names": "list"}
+SELECTABLE = {"use_case": "scalar", "class_names": "list", "user_id": "scalar"}
 
 
 def apply_selection(frame: pd.DataFrame, selection: dict[str, Any] | None) -> pd.DataFrame:
-    """Narrow to one clicked scenario or class.
+    """Narrow to one clicked scenario, class or pseudonymous user.
 
     Kept apart from :func:`apply` on purpose: the dropdowns decide what the
     charts count, the click decides only which rows the Records tab lists.
