@@ -2,65 +2,158 @@
 
 Система анализа логов корпоративного AI-агента для кейса КРОК.
 
-## Архитектура
+## Логика работы
 
-Pipeline из 3 этапов:
-1. **LLM анализ** (qwen-2.5-7b-instruct) — извлечение аналитических признаков
-2. **Zero-shot классификация** (facebook/bart-large-mnli) — категоризация по классам из classes.csv
-3. **Кластеризация эмбеддингов** (paraphrase-multilingual-MiniLM-L12-v2 + HDBSCAN) — поиск use cases
+Pipeline обрабатывает сырые JSON-логи диалогов пользователей с AI-агентом и превращает их в структурированную аналитику use cases.
 
-## Установка
+### Входные данные
 
-```bash
-pip install -r requirements.txt
+В папке `data/dialogs/` лежат файлы вида `session_*.json`:
+```json
+{
+  "user_id": "usr_abc123",
+  "session_id": "sess_20260725_000032",
+  "created_at": "2026-07-25T11:24:38Z",
+  "scenario_type": "email_summary",
+  "messages": [
+    {"role": "user", "content": "Посмотри почту за сегодня"},
+    {"role": "assistant", "content": "Хорошо, проверяю..."},
+    {"role": "tool", "tool_name": "gmail.search", "arguments": {...}, "result": {...}}
+  ]
+}
 ```
 
-## Запуск
+### Этап 1: LLM-анализ
 
-```python
-from main import run_pipeline
-from pathlib import Path
+**Файл:** `llm.py`  
+**Модель:** `Qwen/Qwen2.5-7B-Instruct` (локально на GPU)
 
-run_pipeline(
-    dialogs_dir=Path("path/to/dataset"),
-    outputs_dir=Path("path/to/outputs")
-)
-```
+Для каждого диалога LLM извлекает 20+ признаков:
+- `summary` — краткое содержание
+- `goal` — цель пользователя  
+- `intent` — намерение
+- `is_work` — рабочий запрос или нет
+- `automation_candidate` — можно ли автоматизировать
+- `periodicity` — периодичность (none/daily/weekly/monthly)
+- `complexity` — сложность (simple/medium/complex)
+- `integrations` — какие системы затрагиваются (CRM, Jira, Mail...)
+- `tools` — какие инструменты использовал агент
+- `agent_failed` — была ли ошибка у агента
 
-Или из командной строки:
-```bash
-python main.py
-```
+**Выход:** enriched диалоги с метаданными.
+
+---
+
+### Этап 2: Zero-shot классификация
+
+**Файл:** `zero_shot_classifier.py`  
+**Модель:** `blanchefort/rubert-base-mnli` (русская MNLI)
+
+Классифицирует каждый диалог по заранее заданным классам из `data/classes.csv`:
+
+| id | class_name |
+|----|------------|
+| 1 | Генерация текста и документов |
+| 2 | Поиск и сбор информации |
+| 3 | Анализ данных и отчетность |
+| 4 | Работа с задачами и проектами |
+| 5 | Планирование и календарь |
+| 6 | Управление коммуникациями |
+| 7 | Помощь с кодом и техническими вопросами |
+| 8 | Обучение и объяснение |
+| 9 | Автоматизация рабочих процессов |
+| 10 | Общие вопросы и нерабочие запросы |
+
+Модель возвращает top-N классов с confidence > 0.5. Если ни один класс не прошёл порог — назначается класс по умолчанию (`other`).
+
+**Выход:** для каждого диалога — список классов с вероятностями.
+
+---
+
+### Этап 3: Кластеризация (Use Cases)
+
+**Файл:** `clustering.py`  
+**Модель:** `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`  
+**Алгоритм:** HDBSCAN
+
+1. Первые сообщения пользователей кодируются в эмбеддинги (384-dim)
+2. UMAP уменьшает размерность до 5
+3. HDBSCAN находит кластеры (min_cluster_size=6)
+4. Для каждого кластера LLM генерирует название use case на основе топ-30 запросов
+
+**Выход:** mapping `request_id → cluster_id → use_case_name`
+
+Пример кластеров:
+- Cluster 0: "Поиск и фиксация информации" (86 диалогов)
+- Cluster 1: "Задачи и проекты" (24 диалога)
+- Cluster -1: выбросы (не распознанные сценарии)
+
+---
 
 ## Выходные файлы
 
-- `dialogs.csv` — аналитические признаки каждого диалога
-- `use_cases.csv` — сценарии использования по кластерам
-- `analytics.csv` — итоговый merged dataset
+| Файл | Описание |
+|------|----------|
+| `outputs/dialogs.csv` | 100 строк с LLM-признаками, классами и токенами |
+| `outputs/use_cases.csv` | mapping request_id → cluster → use_case |
+| `outputs/analytics.csv` | итоговый merged dataset для анализа |
+
+---
+
+## Установка и запуск
+
+```bash
+# Установка зависимостей
+pip install -r requirements.txt
+
+# Запуск pipeline
+python main.py
+```
+
+Pipeline автоматически:
+1. Читает все `session_*.json` из `data/dialogs/`
+2. Запускает 3 этапа
+3. Сохраняет результаты в `outputs/`
+
+---
 
 ## Структура проекта
 
 ```
 krok_analytics/
-├── main.py                  # Точка входа
-├── config.py                # Конфигурация
-├── schemas.py               # Pydantic модели
-├── prompts.py               # Промпты для LLM
-├── llm.py                   # LLM инференс
-├── parser.py                # Парсинг JSON
-├── token_counter.py         # Подсчет токенов
-├── zero_shot_classifier.py  # BART-MNLI
-├── embeddings.py            # Sentence-transformers
-├── clustering.py            # HDBSCAN
-├── utils.py                 # Утилиты
+├── main.py                  # Точка входа, оркестрация pipeline
+├── config.py                # Конфигурация моделей и путей
+├── schemas.py               # Pydantic модели (Dialog, Message, etc.)
+├── prompts.py               # Промпты для LLM-анализа
+├── llm.py                   # LLM инференс + парсинг JSON-ответов
+├── parser.py                # Парсинг JSON из сырых файлов
+├── token_counter.py         # Подсчёт токенов (user/assistant/tool)
+├── zero_shot_classifier.py  # Классификация по классам
+├── embeddings.py            # Генерация эмбеддингов
+├── clustering.py            # HDBSCAN + именование кластеров
+├── utils.py                # Вспомогательные функции
 ├── data/
-│   ├── dialogs/             # Входные JSON
-│   └── classes.csv          # Классы
-├── outputs/                 # Результаты
-└── models/                  # Кэш моделей
+│   ├── dialogs/            # Входные session_*.json
+│   └── classes.csv         # Справочник классов
+├── outputs/                # Результаты (dialogs.csv, use_cases.csv, analytics.csv)
+└── models/                 # Кэш моделей (локально)
 ```
+
+---
 
 ## Требования
 
 - Python 3.10+
-- GPU с 16GB+ памяти (рекомендуется для A100)
+- GPU с 16GB+ памяти (A100 рекомендуется)
+- Модели загружаются автоматически с HuggingFace
+
+---
+
+## Экономика
+
+Стоимость инференса считается по формуле:
+```
+cost = (total_tokens / 1000) * $0.0001
+```
+
+Это условная оценка для локального GPU (электричество + амортизация).
