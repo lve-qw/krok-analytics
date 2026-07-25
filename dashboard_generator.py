@@ -1,7 +1,5 @@
 import pandas as pd
 from pathlib import Path
-from dash import Dash, html, dash_table
-import dash
 
 def generate_dashboard(analytics_csv: Path, output_html: Path = None):
     """
@@ -77,130 +75,10 @@ def generate_dashboard(analytics_csv: Path, output_html: Path = None):
     avg_confidence = df['confidence'].mean()
     low_confidence = (df['confidence'] < 0.5).sum()
     
-    # ===== Создаём Dashboard =====
-    app = Dash(__name__)
+    # ===== Генерируем HTML =====
+    print(f"Генерация dashboard...")
     
-    def metric_card(title, value, subtitle=None):
-        return html.Div([
-            html.H4(title, style={'margin': '0 0 10px 0', 'font-size': '14px', 'color': '#666'}),
-            html.H3(str(value), style={'margin': '0', 'font-size': '24px'}),
-            html.Small(subtitle, style={'color': '#999'}) if subtitle else None
-        ], style={
-            'padding': '15px',
-            'border': '1px solid #ddd',
-            'border-radius': '5px',
-            'margin': '10px',
-            'background': '#fff'
-        })
-    
-    def section(title, children):
-        return html.Div([
-            html.H3(title, style={'border-bottom': '2px solid #333', 'padding-bottom': '10px'}),
-            html.Div(children, style={'display': 'flex', 'flexWrap': 'wrap'})
-        ], style={'margin': '20px 0'})
-    
-    app.layout = html.Div([
-        html.H1("Analytics Dashboard", style={'textAlign': 'center', 'margin': '20px'}),
-        
-        section("Общая статистика", [
-            metric_card("Диалогов", total_dialogs),
-            metric_card("Пользователей", total_users),
-            metric_card("Период", f"{date_min[:10]} - {date_max[:10]}")
-        ]),
-        
-        section("Токены и стоимость", [
-            metric_card("Всего токенов", f"{total_tokens:,}"),
-            metric_card("Среднее на диалог", f"{avg_tokens:,.0f}"),
-            metric_card("Burned tokens", f"{total_burned:,}", f"{burned_ratio:.2f}% от общих"),
-            metric_card("Стоимость ($)", f"${total_cost:.2f}")
-        ]),
-        
-        section("Качество агента", [
-            metric_card("Полезные сообщения", useful_total),
-            metric_card("Бесполезные сообщения", useless_total),
-            metric_card("Useful ratio", f"{useful_ratio:.1f}%"),
-            metric_card("Диалоги с ошибками", dialogs_with_burned, f"Среднее burned: {avg_burned_failed:.0f}")
-        ]),
-        
-        section("Классификация", [
-            metric_card("Рабочие диалоги", work_dialogs, f"{work_ratio:.1f}%"),
-            metric_card("Кандидаты на автоматизацию", automation_candidates, f"{automation_ratio:.1f}%")
-        ]),
-        
-        section("Сложность", [
-            metric_card("Simple", complexity_dist.get('simple', 0)),
-            metric_card("Medium", complexity_dist.get('medium', 0)),
-            metric_card("Complex", complexity_dist.get('complex', 0))
-        ]),
-        
-        section("Периодичность", [
-            metric_card("None", periodicity_dist.get('none', 0)),
-            metric_card("Daily", periodicity_dist.get('daily', 0)),
-            metric_card("Weekly", periodicity_dist.get('weekly', 0)),
-            metric_card("Monthly", periodicity_dist.get('monthly', 0))
-        ]),
-        
-        section("Интеграции и инструменты", [
-            metric_card("Диалоги с интеграциями", dialogs_with_int),
-            metric_card("Уникальные интеграции", len(unique_integrations)),
-            metric_card("Уникальные инструменты", len(unique_tools)),
-            metric_card("Среднее tool calls", f"{avg_tool_calls:.1f}")
-        ]),
-        
-        section("Use Cases (кластеры)", [
-            metric_card("В кластерах", total_clusters),
-            metric_card("Выбросы (outliers)", outliers),
-            metric_card("Средний размер кластера", f"{avg_cluster_size:.1f}"),
-            html.Div([
-                html.H4("Топ-5 кластеров", style={'margin': '0 0 10px 0', 'font-size': '14px', 'color': '#666'}),
-                html.Ul([
-                    html.Li(f"Кластер {cid}: {count} диалогов")
-                    for cid, count in top_5_clusters.items()
-                ])
-            ], style={'padding': '15px', 'border': '1px solid #ddd', 'border-radius': '5px', 'margin': '10px'})
-        ]),
-        
-        section("Проблемы", [
-            metric_card("Провалы агента", agent_failures),
-            metric_card("Промпт-инъекции", prompt_injections),
-            metric_card("Чувствительные данные", sensitive_data)
-        ]),
-        
-        section("Языки", [
-            metric_card("Russian", lang_dist.get('ru', 0)),
-            metric_card("English", lang_dist.get('en', 0))
-        ]),
-        
-        section("Уверенность классификации", [
-            metric_card("Средняя confidence", f"{avg_confidence:.3f}"),
-            metric_card("Низкая confidence (<0.5)", low_confidence)
-        ]),
-        
-        html.Hr(),
-        html.P(f"Generated from {analytics_csv.name}", style={'textAlign': 'center', 'color': '#999'})
-    ], style={'maxWidth': '1200px', 'margin': '0 auto', 'padding': '20px', 'fontFamily': 'Arial'})
-    
-    # ===== Сохраняем в HTML =====
-    app.layout = app.layout
-    
-    # Рендерим в HTML
-    from dash import Dash
-    import dash
-    
-    # Используем dash.render_template или просто сохраняем
-    # Для простоты - используем встроенный метод
-    
-    print(f"Генерация dashboard..."  )
-    
-    # Создаём статический HTML
-    import io
-    from contextlib import redirect_stdout
-    
-    # Сохраняем через dash
     output_path = Path(output_html)
-    
-    # Для статического HTML нужно отрендерить
-    # Используем простой подход - записываем HTML вручную
     
     html_content = f"""
 <!DOCTYPE html>
