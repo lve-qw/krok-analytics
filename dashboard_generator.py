@@ -46,12 +46,12 @@ def generate_dashboard(analytics_csv: Path, output_html: Path = None):
     # ===== Интеграции =====
     dialogs_with_int = (df['integration_count'] > 0).sum()
     unique_integrations = set()
-    df['integrations'].fillna('', inplace=True)
+    df['integrations'] = df['integrations'].fillna('').astype(str)
     df['integrations'].apply(lambda x: unique_integrations.update(x.split(';')) if x else None)
     unique_integrations.discard('')
     
     unique_tools = set()
-    df['tools'].fillna('', inplace=True)
+    df['tools'] = df['tools'].fillna('').astype(str)
     df['tools'].apply(lambda x: unique_tools.update(x.split(';')) if x else None)
     unique_tools.discard('')
     
