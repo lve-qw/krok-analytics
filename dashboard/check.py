@@ -119,6 +119,11 @@ def report(target: str) -> str:
         _line("avg_confidence", f"{confidence_stats['avg_confidence']:.3f}"),
         _line(f"low_confidence (< {LOW_CONFIDENCE})", confidence_stats["low_confidence_dialogs"]),
     ]
+    out += ["", "Сводка по видимым строкам"]
+    for line in metrics.insights(frame).values():
+        if line:
+            out.append(f"  {line}")
+
     return "\n".join(out)
 
 

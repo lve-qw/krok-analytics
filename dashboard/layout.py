@@ -1,10 +1,8 @@
-"""Page composition: five questions, each answered before it is charted.
+"""Page composition: five questions, each answered by its charts.
 
 The page is ordered by what a reader wants to know — where the money goes,
 what to automate, where it breaks, who uses it, what it consists of — and not
-by the order of metrics.md. Under every section title there is one generated
-sentence with the numbers already substituted, so the conclusion and the chart
-that supports it can never drift apart.
+by the order of metrics.md.
 
 Each card states its formula in the `?` note next to the title: on a projector
 a number without its definition is a claim, and a number with one is a
@@ -57,18 +55,20 @@ def card(title: str, tip: str, subtitle: str, *children, className: str = "card"
     return html.Div(body, className=className)
 
 
-def section(kicker: str, question: str, insight_id: str, body: html.Div, footnote_id: str = "") -> html.Div:
-    """A question, its generated answer, and the charts that back the answer."""
+def section(kicker: str, question: str, body: html.Div) -> html.Div:
+    """A question and the charts that answer it."""
 
-    heading: list = [
-        html.Span(kicker, className="section-kicker"),
-        html.H2(question, className="section-title"),
-        html.P(id=insight_id, className="insight"),
-    ]
-    if footnote_id:
-        heading.append(html.P(id=footnote_id, className="insight insight-footnote"))
     return html.Div(
-        [html.Div(heading, className="section-heading"), body],
+        [
+            html.Div(
+                [
+                    html.Span(kicker, className="section-kicker"),
+                    html.H2(question, className="section-title"),
+                ],
+                className="section-heading",
+            ),
+            body,
+        ],
         className="metric-section",
     )
 
@@ -226,7 +226,6 @@ def tokens_section() -> html.Div:
     return section(
         "Расход",
         "Куда уходят токены?",
-        "insight-tokens",
         html.Div(
             [
                 card(
@@ -254,7 +253,6 @@ def automation_section() -> html.Div:
     return section(
         "Автоматизация",
         "Что автоматизировать первым?",
-        "insight-automation",
         html.Div(
             [
                 card(
@@ -283,7 +281,6 @@ def reliability_section() -> html.Div:
     return section(
         "Надёжность",
         "Где агент ломается?",
-        "insight-failures",
         html.Div(
             [
                 card(
@@ -318,7 +315,6 @@ def usage_section() -> html.Div:
     return section(
         "Нагрузка",
         "Кто и когда пользуется?",
-        "insight-usage",
         html.Div(
             [
                 card(
@@ -347,7 +343,6 @@ def catalogue_section() -> html.Div:
     return section(
         "Состав",
         "Что это за диалоги?",
-        "insight-catalogue",
         html.Div(
             [
                 card(
@@ -376,7 +371,6 @@ def catalogue_section() -> html.Div:
             ],
             className="chart-grid chart-grid-three",
         ),
-        footnote_id="insight-profile",
     )
 
 

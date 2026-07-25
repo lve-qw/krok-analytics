@@ -90,23 +90,17 @@ def create_app(target: str | Path) -> Dash:
     @app.callback(
         Output("kpi-container", "children"),
         Output("result-count", "children"),
-        Output("insight-tokens", "children"),
         Output("chart-token-split", "figure"),
         Output("chart-tokens-scenario", "figure"),
-        Output("insight-automation", "children"),
         Output("chart-scenario-map", "figure"),
         Output("chart-complexity-auto", "figure"),
-        Output("insight-failures", "children"),
         Output("chart-failures", "figure"),
         Output("stat-problems", "children"),
         Output("chart-quality", "figure"),
         Output("stat-quality", "children"),
         Output("chart-confidence", "figure"),
-        Output("insight-usage", "children"),
         Output("chart-users", "figure"),
         Output("chart-hourly", "figure"),
-        Output("insight-catalogue", "children"),
-        Output("insight-profile", "children"),
         Output("chart-clusters", "figure"),
         Output("stat-clusters", "children"),
         Output("chart-integrations", "figure"),
@@ -132,7 +126,6 @@ def create_app(target: str | Path) -> Dash:
         integration_stats = metrics.integrations(filtered)
         problem_stats = metrics.problems(filtered)
         confidence_stats = metrics.confidence(filtered)
-        lines = metrics.insights(filtered)
         cards = metrics.kpis(filtered)
 
         result = f"Показано {len(filtered)} из {len(frame)} диалогов."
@@ -144,7 +137,6 @@ def create_app(target: str | Path) -> Dash:
             [layout.kpi_row(cards[:4]), layout.kpi_row(cards[4:])],
             result,
             # Куда уходят токены?
-            lines["tokens"],
             charts.donut(metrics.token_split(filtered), active_theme),
             charts.ranked_bar(
                 metrics.tokens_by_scenario(filtered),
@@ -157,7 +149,6 @@ def create_app(target: str | Path) -> Dash:
                 color=active_theme.series[0],
             ),
             # Что автоматизировать первым?
-            lines["automation"],
             charts.scenario_scatter(metrics.scenario_map(filtered), active_theme),
             charts.grouped_bar(
                 metrics.complexity_by_automation(filtered),
@@ -166,7 +157,6 @@ def create_app(target: str | Path) -> Dash:
                 right=("rest", "Остальные"),
             ),
             # Где агент ломается?
-            lines["failures"],
             charts.ranked_bar(
                 problem_stats["failure_reasons"],
                 active_theme,
@@ -201,7 +191,6 @@ def create_app(target: str | Path) -> Dash:
             ).children,
             charts.confidence_histogram(confidence_stats["values"], active_theme, LOW_CONFIDENCE),
             # Кто и когда пользуется?
-            lines["usage"],
             charts.usage_bar(
                 metrics.usage_ranking(filtered, users_metric),
                 active_theme,
@@ -210,8 +199,6 @@ def create_app(target: str | Path) -> Dash:
             ),
             charts.hourly_profile(metrics.hourly_load(filtered), active_theme, hourly_metric),
             # Что это за диалоги?
-            lines["catalogue"],
-            lines["profile"],
             charts.ranked_bar(
                 cluster_stats["sizes"],
                 active_theme,
