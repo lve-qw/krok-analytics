@@ -115,26 +115,47 @@ class LLMAnalyzer:
             json_str = json_str.strip()
             
             data = json.loads(json_str)
+            
+            # Нормализация periodicity
+            periodicity = data.get("periodicity", "none")
+            if periodicity not in ["none", "daily", "weekly", "monthly"]:
+                periodicity = "none"
+            
+            # Нормализация complexity
+            complexity = data.get("complexity", "simple")
+            if complexity not in ["simple", "medium", "complex"]:
+                complexity = "simple"
+            
+            # Нормализация списков
+            def ensure_list(val):
+                return val if isinstance(val, list) else []
+            
+            integrations = ensure_list(data.get("integrations", []))
+            tools = ensure_list(data.get("tools", []))
+            company_sources = ensure_list(data.get("company_sources", []))
+            requires_generation = ensure_list(data.get("requires_generation", []))
+            search_type = ensure_list(data.get("search_type", []))
+            
             return DialogMetadata(
                 summary=data.get("summary", ""),
                 goal=data.get("goal", ""),
                 intent=data.get("intent", ""),
-                is_work=data.get("is_work", False),
-                automation_candidate=data.get("automation_candidate", False),
-                periodicity=data.get("periodicity", "none"),
-                complexity=data.get("complexity", "simple"),
-                steps_requested=data.get("steps_requested", 1),
-                integrations=data.get("integrations", []),
-                integration_count=len(data.get("integrations", [])),
-                tools=data.get("tools", []),
-                tool_calls=data.get("tool_calls", 0),
-                uses_company_data=data.get("uses_company_data", False),
-                company_sources=data.get("company_sources", []),
-                requires_generation=data.get("requires_generation", []),
-                search_type=data.get("search_type", []),
-                contains_sensitive_data=data.get("contains_sensitive_data", False),
-                prompt_injection=data.get("prompt_injection", False),
-                agent_failed=data.get("agent_failed", False),
+                is_work=bool(data.get("is_work", False)),
+                automation_candidate=bool(data.get("automation_candidate", False)),
+                periodicity=periodicity,
+                complexity=complexity,
+                steps_requested=int(data.get("steps_requested", 1)),
+                integrations=integrations,
+                integration_count=len(integrations),
+                tools=tools,
+                tool_calls=int(data.get("tool_calls", 0)),
+                uses_company_data=bool(data.get("uses_company_data", False)),
+                company_sources=company_sources,
+                requires_generation=requires_generation,
+                search_type=search_type,
+                contains_sensitive_data=bool(data.get("contains_sensitive_data", False)),
+                prompt_injection=bool(data.get("prompt_injection", False)),
+                agent_failed=bool(data.get("agent_failed", False)),
                 failure_reason=data.get("failure_reason"),
                 language=data.get("language", "ru")
             )
