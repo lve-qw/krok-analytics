@@ -1,0 +1,47 @@
+{
+  "user_id": "usr_018472",
+  "session_id": "sess_20260725_053",
+  "created_at": "2026-07-25T09:54:31Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T09:54:31Z",
+      "content": "SQL-запрос на дашборде стал тормозить. Подскажи, как его ускорить без полной переделки витрины."
+    },
+    {
+      "role": "assistant",
+      "content": "Проверю план выполнения и посмотрю, где у запроса лишняя тяжесть: сортировка, джойны или агрегация."
+    },
+    {
+      "role": "tool",
+      "tool_name": "sql.explain",
+      "arguments": {
+        "query": "select date_trunc('day', created_at), count(*), sum(amount) from events join payments using(order_id) where created_at >= current_date - interval '90 days' group by 1 order by 1"
+      },
+      "result": {
+        "plan_summary": "Large sequential scan on events and repeated join to payments; no helpful index on created_at."
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "sql.query",
+      "arguments": {
+        "query": "select min(created_at), max(created_at), count(*) from events where created_at >= current_date - interval '90 days'"
+      },
+      "result": {
+        "rows": [
+          {
+            "min": "2026-04-26",
+            "max": "2026-07-25",
+            "count": 1489321
+          }
+        ]
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:56:02Z",
+      "content": "Тут узкое место похоже на полный проход по `events` и дорогой join с `payments`.\n\nЧто даст эффект быстрее всего:\n- индекс по `created_at`;\n- предварительная агрегация по `order_id`, если payments многострочный;\n- если дашборд смотрит только дневные итоги, сначала собрать дневной слой, а уже потом джойнить.\n\nТо есть без полной переделки можно выиграть за счёт индекса и сокращения объёма данных до агрегации."
+    }
+  ]
+}

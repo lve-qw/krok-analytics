@@ -1,0 +1,54 @@
+{
+  "user_id": "usr_018472",
+  "session_id": "sess_20260725_021009",
+  "created_at": "2026-07-25T10:33:08Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T10:33:08Z",
+      "content": "Нужно собрать повестку для воркшопа по процессам на завтра. Хочу, чтобы мы не расползлись по теме и уложились в 50 минут."
+    },
+    {
+      "role": "assistant",
+      "content": "Сейчас посмотрю, какие задачи и заметки уже есть, чтобы повестка была привязана к реальным болям, а не абстрактной встрече."
+    },
+    {
+      "role": "tool",
+      "tool_name": "notion.search",
+      "arguments": {
+        "query": "process workshop agenda bottlenecks"
+      },
+      "result": {
+        "pages_found": 2,
+        "best_match": {
+          "title": "Ops Workshop Notes",
+          "updated_at": "2026-07-24T17:20:00Z"
+        }
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "google_calendar.find_availability",
+      "arguments": {
+        "participants": ["usr_018472", "ops-lead@company.com", "pm@company.com"],
+        "duration_minutes": 50,
+        "date_from": "2026-07-26",
+        "date_to": "2026-07-26",
+        "working_hours": "10:00-18:00"
+      },
+      "result": {
+        "candidate_slots": [
+          {
+            "start": "2026-07-26T11:00:00Z",
+            "end": "2026-07-26T11:50:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T10:33:33Z",
+      "content": "Я бы собрал повестку так: 10 минут на цели и рамки, 20 минут на текущие узкие места, 15 минут на решения и владельцев, 5 минут на фиксацию следующих шагов. По календарю у всех есть окно на завтра в 11:00 UTC, так что можно спокойно поставить воркшоп туда и не бояться, что он расползётся."
+    }
+  ]
+}

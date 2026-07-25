@@ -1,0 +1,49 @@
+{
+  "user_id": "usr_071204",
+  "session_id": "sess_20260725_000067",
+  "created_at": "2026-07-25T09:18:11Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T09:18:11Z",
+      "content": "Мне надо понять, почему в отчёте по заявкам резко выросло среднее время закрытия. Посмотри данные и скажи, где узкое место."
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:18:18Z",
+      "content": "Сначала посмотрю агрегации по статусам и по очередям, потом найду место, где чаще всего застревают заявки."
+    },
+    {
+      "role": "tool",
+      "tool_name": "sql.query",
+      "arguments": {
+        "dataset": "tickets",
+        "query": "SELECT queue, AVG(close_time_hours) AS avg_close FROM tickets WHERE created_at >= '2026-06-01' GROUP BY queue ORDER BY avg_close DESC;"
+      },
+      "result": {
+        "rows": 4,
+        "top_queue": "Интеграции",
+        "top_queue_avg_close_hours": 39.4,
+        "overall_avg_close_hours": 18.2
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "sql.query",
+      "arguments": {
+        "dataset": "tickets",
+        "query": "SELECT status, COUNT(*) AS cnt FROM tickets WHERE queue = 'Интеграции' GROUP BY status;"
+      },
+      "result": {
+        "rows": 4,
+        "bottleneck_status": "Waiting for QA",
+        "count": 27
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:18:35Z",
+      "content": "Узкое место, похоже, в очереди «Интеграции».\n\nЧто вижу:\n- среднее время закрытия по всем заявкам: 18,2 часа\n- в очереди «Интеграции»: 39,4 часа\n- больше всего заявок стоит в статусе Waiting for QA\n\nТо есть проблема не на этапе регистрации, а на стыке разработки и проверки. Если хочешь, я могу ещё собрать список конкретных тикетов, которые висят дольше всего."
+    }
+  ]
+}

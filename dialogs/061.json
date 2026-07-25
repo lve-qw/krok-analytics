@@ -1,0 +1,57 @@
+{
+  "user_id": "usr_018472",
+  "session_id": "sess_20260725_000061",
+  "created_at": "2026-07-25T09:01:12Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T09:01:12Z",
+      "content": "Посмотри, пожалуйста, что у нас по задаче DATA-1842 и заодно проверь, не отвечал ли Алексей на письмо по ней. Если есть свежие новости по FastMCP, тоже кинь коротко."
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:01:19Z",
+      "content": "Сейчас проверю задачу, почту и последние упоминания по FastMCP, потом соберу короткую сводку."
+    },
+    {
+      "role": "tool",
+      "tool_name": "jira.search_issue",
+      "arguments": {
+        "issue_key": "DATA-1842"
+      },
+      "result": {
+        "status": "In Review",
+        "assignee": "Алексей Смирнов",
+        "updated": "2026-07-25T08:51:12Z",
+        "last_comment": "Ждём результаты интеграционных тестов."
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "gmail.search",
+      "arguments": {
+        "query": "from:alexey newer_than:7d"
+      },
+      "result": {
+        "emails_found": 1,
+        "latest_subject": "Re: DATA-1842",
+        "received_at": "2026-07-25T08:58:40Z"
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "web.search",
+      "arguments": {
+        "query": "FastMCP latest updates"
+      },
+      "result": {
+        "summary": "За последнюю неделю вышел релиз 1.9 с улучшенной поддержкой Tool Calling."
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:01:41Z",
+      "content": "Проверил все три источника.\n\n- DATA-1842 сейчас в статусе In Review, последний комментарий: ждут результаты интеграционных тестов.\n- От Алексея сегодня пришло письмо с темой «Re: DATA-1842» в 08:58.\n- По FastMCP свежая заметная новость — релиз 1.9 с улучшенной поддержкой Tool Calling.\n\nЕсли хочешь, могу ещё отдельно посмотреть, кто именно упомянут в комментариях по тестам."
+    }
+  ]
+}

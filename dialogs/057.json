@@ -1,0 +1,46 @@
+{
+  "user_id": "usr_018472",
+  "session_id": "sess_20260725_057",
+  "created_at": "2026-07-25T10:30:19Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T10:30:19Z",
+      "content": "Почему наш webhook периодически шлёт дубли в внешнюю систему? Логи есть, но я не могу быстро понять причину."
+    },
+    {
+      "role": "assistant",
+      "content": "Проверю код отправки и логи ретраев, чтобы понять, где нет идемпотентности или защита от повторной доставки."
+    },
+    {
+      "role": "tool",
+      "tool_name": "github.search_code",
+      "arguments": {
+        "query": "webhook retry duplicate idempotency key"
+      },
+      "result": {
+        "files_found": 2,
+        "files": [
+          "integrations/webhook_sender.py",
+          "integrations/retry_policy.py"
+        ]
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "logs.fetch",
+      "arguments": {
+        "service": "webhook-service",
+        "query": "duplicate delivery"
+      },
+      "result": {
+        "sample": "retry attempt 2 without dedup key"
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T10:31:44Z",
+      "content": "Причина очень похожа на отсутствие идемпотентного ключа на повторных попытках. В логах прямо видно: retry attempt 2 without dedup key.\n\nЭто значит, что при повторе внешний сервис видит запрос как новый и записывает его ещё раз.\n\nЧто исправить:\n- генерировать и сохранять dedup key на уровне первого запроса;\n- передавать этот ключ во все ретраи;\n- добавить проверку, чтобы retry policy не отправляла повтор без того же идентификатора."
+    }
+  ]
+}

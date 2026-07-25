@@ -1,0 +1,47 @@
+{
+  "user_id": "usr_067210",
+  "session_id": "sess_20260725_021004",
+  "created_at": "2026-07-25T09:41:58Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T09:41:58Z",
+      "content": "Проверь, пожалуйста, были ли сегодня какие-то апдейты по релизу 2.3 и писал ли кто-то про это в общих каналах. Мне надо понять, не пропустили ли мы что-то важное."
+    },
+    {
+      "role": "assistant",
+      "content": "Сейчас быстро пробегусь по рабочим каналам и по документам, чтобы собрать свежую картину."
+    },
+    {
+      "role": "tool",
+      "tool_name": "slack.search",
+      "arguments": {
+        "query": "\"release 2.3\" OR \"релиз 2.3\""
+      },
+      "result": {
+        "messages_found": 4,
+        "channels": ["#product", "#release-notes", "#eng-general"],
+        "summary": "Основное обсуждение было в #release-notes: релиз перенесли на вечер из-за финальной проверки миграции."
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "notion.search",
+      "arguments": {
+        "query": "release 2.3 status"
+      },
+      "result": {
+        "pages_found": 2,
+        "best_match": {
+          "title": "Release 2.3 - Launch Notes",
+          "updated_at": "2026-07-25T08:47:00Z"
+        }
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:42:22Z",
+      "content": "По состоянию на сегодня есть свежие апдейты: в Slack обсуждали перенос релиза 2.3 на вечер, а страница Launch Notes обновлялась сегодня утром. Похоже, ничего критичного не пропустили, но стоит заглянуть в #release-notes, потому что именно там сейчас идёт основная координация."
+    }
+  ]
+}

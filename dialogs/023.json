@@ -1,0 +1,45 @@
+{
+  "user_id": "usr_041903",
+  "session_id": "sess_20260725_021003",
+  "created_at": "2026-07-25T09:29:44Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T09:29:44Z",
+      "content": "Объясни простыми словами разницу между full refresh и incremental refresh в ETL. Мне это надо не для теории, а чтобы нормально объяснить аналитикам и менеджеру."
+    },
+    {
+      "role": "assistant",
+      "content": "Сначала гляну, как это описано у вас во внутренних материалах, чтобы не уйти в абстракцию."
+    },
+    {
+      "role": "tool",
+      "tool_name": "drive.search",
+      "arguments": {
+        "query": "ETL refresh incremental full refresh"
+      },
+      "result": {
+        "files_found": 3,
+        "best_match": {
+          "name": "Warehouse Loading Guidelines",
+          "path": "/Shared/Analytics/Warehouse Loading Guidelines.docx"
+        }
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "web.search",
+      "arguments": {
+        "query": "incremental refresh vs full refresh data pipeline"
+      },
+      "result": {
+        "summary": "Incremental refresh updates only new or changed rows, while full refresh rebuilds the dataset from scratch."
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:30:10Z",
+      "content": "Если совсем просто: full refresh пересобирает всё заново, а incremental refresh забирает только изменения с прошлого запуска. Full refresh проще объяснять и отлаживать, но он дороже по времени и ресурсам. Incremental обычно быстрее и экономнее, зато требует аккуратной логики по дельтам, удалённым строкам и повторным загрузкам. Для менеджера можно сказать так: full refresh - это «перегрузить всю таблицу», incremental - «дослать только то, что поменялось»."
+    }
+  ]
+}

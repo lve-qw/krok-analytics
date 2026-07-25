@@ -1,0 +1,72 @@
+{
+  "user_id": "usr_009114",
+  "session_id": "sess_20260725_047",
+  "created_at": "2026-07-25T09:03:18Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T09:03:18Z",
+      "content": "Сделай отчёт по выигранным сделкам за прошлую неделю. Мне важны сумма, количество и кто принёс больше всего."
+    },
+    {
+      "role": "assistant",
+      "content": "Сейчас возьму данные по сделкам и соберу краткий отчёт по сумме, количеству и лидерам."
+    },
+    {
+      "role": "tool",
+      "tool_name": "sql.query",
+      "arguments": {
+        "query": "select owner, count(*), sum(amount) from deals where status = 'won' and closed_at >= current_date - interval '30 days' group by owner order by sum(amount) desc"
+      },
+      "result": {
+        "rows": [
+          {
+            "owner": "Алексей Смирнов",
+            "count": 14,
+            "sum": 18600000
+          },
+          {
+            "owner": "Марина Орлова",
+            "count": 11,
+            "sum": 14250000
+          }
+        ]
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Я сначала взял слишком широкий период за 30 дней, а тебе нужна прошлая неделя. Пересчитаю ровно за 7 дней, чтобы отчёт был точным."
+    },
+    {
+      "role": "tool",
+      "tool_name": "sql.query",
+      "arguments": {
+        "query": "select owner, count(*), sum(amount) from deals where status = 'won' and closed_at >= current_date - interval '7 days' group by owner order by sum(amount) desc"
+      },
+      "result": {
+        "rows": [
+          {
+            "owner": "Алексей Смирнов",
+            "count": 5,
+            "sum": 7200000
+          },
+          {
+            "owner": "Марина Орлова",
+            "count": 4,
+            "sum": 5150000
+          },
+          {
+            "owner": "Илья Громов",
+            "count": 3,
+            "sum": 4300000
+          }
+        ]
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:04:42Z",
+      "content": "Отчёт за прошлую неделю:\n- 12 выигранных сделок\n- общая сумма: 16,65 млн\n- лидер по сумме: Алексей Смирнов - 7,2 млн\n- дальше Марина Орлова - 5,15 млн и Илья Громов - 4,3 млн\n\nЕсли хочешь, могу сразу упаковать это в более официальный формат для руководства: 3-4 буллета и один вывод."
+    }
+  ]
+}

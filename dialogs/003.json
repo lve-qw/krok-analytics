@@ -1,0 +1,57 @@
+{
+  "user_id": "usr_045118",
+  "session_id": "sess_20260725_000003",
+  "created_at": "2026-07-25T08:31:02Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T08:31:02Z",
+      "content": "Собери, пожалуйста, короткий отчет по продажам за вчера: выручка по регионам, сколько сделок закрыли и где просадка."
+    },
+    {
+      "role": "assistant",
+      "content": "Сейчас заберу цифры из таблицы, посчитаю срез по регионам и сведу это в короткий отчет с выводами."
+    },
+    {
+      "role": "tool",
+      "tool_name": "sql.query",
+      "arguments": {
+        "query": "SELECT region, SUM(revenue) AS revenue, COUNT(*) AS deals_closed FROM sales_deals WHERE close_date = CURRENT_DATE - INTERVAL '1 day' GROUP BY region ORDER BY revenue DESC;"
+      },
+      "result": {
+        "rows": [
+          {"region": "Москва", "revenue": 18400000, "deals_closed": 12},
+          {"region": "Северо-Запад", "revenue": 9600000, "deals_closed": 7},
+          {"region": "Поволжье", "revenue": 4100000, "deals_closed": 4},
+          {"region": "Юг", "revenue": 3600000, "deals_closed": 3}
+        ]
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "python.analyze",
+      "arguments": {
+        "operation": "calculate_share_and_dropoff",
+        "input": {
+          "rows": [
+            {"region": "Москва", "revenue": 18400000, "deals_closed": 12},
+            {"region": "Северо-Запад", "revenue": 9600000, "deals_closed": 7},
+            {"region": "Поволжье", "revenue": 4100000, "deals_closed": 4},
+            {"region": "Юг", "revenue": 3600000, "deals_closed": 3}
+          ]
+        }
+      },
+      "result": {
+        "total_revenue": 35700000,
+        "top_region_share": 0.515,
+        "lowest_region": "Юг",
+        "comment": "По выручке лидирует Москва, а самая заметная просадка по закрытиям в Южном регионе."
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T08:31:26Z",
+      "content": "Кратко по вчерашнему дню:\n\n- Общая выручка: 35,7 млн\n- Лидер: Москва, 18,4 млн и 12 закрытых сделок\n- Далее Северо-Запад: 9,6 млн и 7 сделок\n- Просадка заметнее всего в Юге: 3,6 млн и 3 сделки\n\nВывод: основную кассу сейчас делает Москва, а южный регион выглядит точкой, где стоит проверить воронку и активность менеджеров.\n\nЕсли нужно, могу сразу оформить это в более «руководительском» стиле на 3-4 буллета."
+    }
+  ]
+}

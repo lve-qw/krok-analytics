@@ -1,0 +1,46 @@
+{
+  "user_id": "usr_029155",
+  "session_id": "sess_20260725_021014",
+  "created_at": "2026-07-25T11:24:55Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T11:24:55Z",
+      "content": "Сможешь посмотреть, из-за чего на этой неделе выросло количество обращений в поддержку? Мне нужен не просто список, а короткое объяснение причин."
+    },
+    {
+      "role": "assistant",
+      "content": "Да, соберу данные по тикетам и посмотрю, повторяются ли причины или это разовые случаи."
+    },
+    {
+      "role": "tool",
+      "tool_name": "drive.search",
+      "arguments": {
+        "query": "support tickets weekly report july"
+      },
+      "result": {
+        "files_found": 1,
+        "best_match": {
+          "name": "Support Weekly Summary",
+          "path": "/Shared/Support/Support Weekly Summary.xlsx"
+        }
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "spreadsheets.summarize",
+      "arguments": {
+        "file": "/Shared/Support/Support Weekly Summary.xlsx",
+        "sheet": "Tickets"
+      },
+      "result": {
+        "summary": "Рост обращений связан в основном с авторизацией после обновления и с долгой загрузкой дашборда у части пользователей."
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T11:25:20Z",
+      "content": "Главные причины выглядят довольно приземлённо: после обновления стало больше вопросов по авторизации, плюс часть пользователей жалуется на медленную загрузку дашборда. Это похоже не на один большой инцидент, а на две повторяющиеся проблемы, которые и дали общий рост обращений."
+    }
+  ]
+}

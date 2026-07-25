@@ -1,0 +1,57 @@
+{
+  "user_id": "usr_018472",
+  "session_id": "sess_20260725_000001",
+  "created_at": "2026-07-25T08:05:12Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T08:05:12Z",
+      "content": "Посмотри, пожалуйста, что сейчас с задачей DATA-1842 и есть ли свежий ответ от Алексея по ней. Еще интересно, обновляли ли что-то по FastMCP за последнюю неделю."
+    },
+    {
+      "role": "assistant",
+      "content": "Сейчас быстро проверю Jira, почту и последние упоминания по FastMCP. Сведу все в короткий итог."
+    },
+    {
+      "role": "tool",
+      "tool_name": "jira.search_issue",
+      "arguments": {
+        "issue_key": "DATA-1842"
+      },
+      "result": {
+        "status": "In Review",
+        "assignee": "Алексей Смирнов",
+        "updated": "2026-07-25T07:48:31Z",
+        "last_comment": "Ждем финальный прогон интеграционных тестов."
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "gmail.search",
+      "arguments": {
+        "query": "from:alexey subject:\"DATA-1842\" newer_than:7d"
+      },
+      "result": {
+        "emails_found": 1,
+        "latest_subject": "Re: DATA-1842",
+        "received_at": "2026-07-25T08:01:09Z",
+        "snippet": "Смотрю замечания по тестам, к обеду дам апдейт."
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "web.search",
+      "arguments": {
+        "query": "FastMCP release notes last week tool calling"
+      },
+      "result": {
+        "summary": "В свежих материалах отмечают релиз 1.9 с улучшенной поддержкой Tool Calling и более стабильной маршрутизацией вызовов инструментов."
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T08:05:37Z",
+      "content": "Проверил.\n\n- DATA-1842 сейчас в статусе In Review.\n- Последний комментарий: ждут финальный прогон интеграционных тестов.\n- От Алексея пришло письмо сегодня в 08:01, он пишет, что даст апдейт к обеду.\n- По FastMCP есть свежий релиз 1.9, там улучшили поддержку Tool Calling и стабильность маршрутизации.\n\nЕсли хочешь, могу еще собрать короткий статус для команды в одном сообщении."
+    }
+  ]
+}

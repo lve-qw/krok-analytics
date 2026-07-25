@@ -1,0 +1,69 @@
+{
+  "user_id": "usr_018472",
+  "session_id": "sess_20260725_021001",
+  "created_at": "2026-07-25T09:05:11Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T09:05:11Z",
+      "content": "Нужно быстро понять, когда на следующей неделе лучше поставить синк по проекту Orion. Мне важно, чтобы были я, Лена и Роман, и чтобы не залезть в уже забитые окна."
+    },
+    {
+      "role": "assistant",
+      "content": "Сейчас проверю доступность по календарям и соберу несколько нормальных вариантов, чтобы можно было сразу выбрать."
+    },
+    {
+      "role": "tool",
+      "tool_name": "google_calendar.find_availability",
+      "arguments": {
+        "participants": ["usr_018472", "lena@company.com", "roman@company.com"],
+        "duration_minutes": 30,
+        "date_from": "2026-07-27",
+        "date_to": "2026-07-31",
+        "working_hours": "10:00-18:00"
+      },
+      "result": {
+        "candidate_slots": [
+          {
+            "start": "2026-07-27T11:00:00Z",
+            "end": "2026-07-27T11:30:00Z"
+          },
+          {
+            "start": "2026-07-29T13:30:00Z",
+            "end": "2026-07-29T14:00:00Z"
+          },
+          {
+            "start": "2026-07-30T15:00:00Z",
+            "end": "2026-07-30T15:30:00Z"
+          }
+        ],
+        "conflicts": [
+          {
+            "participant": "lena@company.com",
+            "note": "Занята в среду после 16:00"
+          },
+          {
+            "participant": "roman@company.com",
+            "note": "Есть плотный блок в четверг с 12:00 до 14:30"
+          }
+        ]
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "slack.search",
+      "arguments": {
+        "query": "Orion sync next week Lena Roman"
+      },
+      "result": {
+        "messages_found": 2,
+        "summary": "В канале проекта обсуждали, что желательно поставить встречу до пятницы и оставить 30 минут."
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:05:39Z",
+      "content": "Нашёл три нормальных окна: 27 июля в 11:00, 29 июля в 13:30 и 30 июля в 15:00. По Slack видно, что команде удобнее уложиться до пятницы и оставить встречу на 30 минут, так что я бы ставил 29 июля в 13:30 по UTC, если вам подходит."
+    }
+  ]
+}

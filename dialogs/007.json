@@ -1,0 +1,61 @@
+{
+  "user_id": "usr_086503",
+  "session_id": "sess_20260725_000007",
+  "created_at": "2026-07-25T09:25:18Z",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T09:25:18Z",
+      "content": "Нужно запланировать созвон на следующей неделе для пяти человек. Найди общий слот и предложи время, чтобы всем было удобно."
+    },
+    {
+      "role": "assistant",
+      "content": "Сейчас проверю доступные окна в календарях и выберу несколько вариантов общего слота."
+    },
+    {
+      "role": "tool",
+      "tool_name": "calendar.find_free_slots",
+      "arguments": {
+        "attendees": [
+          "ivan.petrov@company.ru",
+          "anna.smirnova@company.ru",
+          "pavel.kim@company.ru",
+          "olga.ivanova@company.ru",
+          "sergey.volkov@company.ru"
+        ],
+        "date_from": "2026-07-27",
+        "date_to": "2026-07-31",
+        "duration_minutes": 45
+      },
+      "result": {
+        "slots": [
+          "2026-07-28T11:00:00+03:00",
+          "2026-07-29T16:30:00+03:00",
+          "2026-07-31T10:00:00+03:00"
+        ]
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "calendar.get_busy_summary",
+      "arguments": {
+        "attendees": [
+          "ivan.petrov@company.ru",
+          "anna.smirnova@company.ru",
+          "pavel.kim@company.ru",
+          "olga.ivanova@company.ru",
+          "sergey.volkov@company.ru"
+        ]
+      },
+      "result": {
+        "common_constraints": "У всех есть окно до обеда 28 июля и после 16:00 29 июля.",
+        "timezone": "Europe/Moscow"
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T09:25:44Z",
+      "content": "Есть три хороших варианта:\n\n- 28 июля в 11:00\n- 29 июля в 16:30\n- 31 июля в 10:00\n\nСамый удобный общий слот выглядит как 28 июля в 11:00 по Москве: у всех есть свободное окно до обеда, и это не слишком поздно для команды.\n\nЕсли хочешь, я могу сразу подготовить текст приглашения на встречу."
+    }
+  ]
+}
