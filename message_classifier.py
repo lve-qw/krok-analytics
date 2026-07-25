@@ -1,5 +1,6 @@
 import json
 import torch
+import re
 from typing import List, Optional, Tuple
 from schemas import Dialog, MessageClassification, MessageClassificationResult
 from prompts import CLASSIFY_MESSAGES_PROMPT
@@ -158,30 +159,60 @@ class MessageClassifier:
         """Парсит JSON ответ от модели с валидацией и нормализацией."""
         classifications = []
         
-        # Очищаем ответ от markdown
+        # Очищаем ответ от markdown и лишнего текста
         response = response.strip()
-        if response.startswith("```"):
-            response = response.split("```")[1].strip()
-            if response.startswith("json"):
-                response = response[3:].strip()
         
-        # Пробуем распарсить JSON
-        data = None
-        try:
-            data = json.loads(response)
-        except json.JSONDecodeError:
-            # Пробуем найти JSON в тексте
-            import re
-            json_match = re.search(r'\[\s*\{.*\}\s*\]', response, re.DOTALL)
-            if json_match:
-                try:
-                    data = json.loads(json_match.group())
-                except:
-                    pass
+        # Убираем markdown code blocks
+        if "```" in response:
+            parts = response.split("```")
+            for part in parts:
+                part = part.strip()
+                if part.startswith("json"):
+                    part = part[3:].strip()
+                # Пробуем найти JSON в этой части
+                data = self._extract_json(part)
+                if data:
+                    break
+        else:
+            data = self._extract_json(response)
         
         if not data or not isinstance(data, list):
             print(f"Warning: Invalid JSON response from LLM: {response[:200]}...")
             return classifications
+    
+    def _extract_json(self, text: str) -> Optional[List]:
+        """Извлекает JSON массив из текста."""
+        # Сначала пробуем распарсить весь текст
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+        
+        # Ищем JSON массив в тексте
+        # Более жадный паттерн для поиска массива объектов
+        json_match = re.search(r'\[\s*\{[^\[\]]*\}\s*\]', text, re.DOTALL)
+        if json_match:
+            try:
+                data = json.loads(json_match.group())
+                if isinstance(data, list):
+                    return data
+            except:
+                pass
+        
+        # Пробуем найти все JSON объекты и собрать их в массив
+        objects = []
+        obj_matches = re.findall(r'\{[^\{\}]*\}', text, re.DOTALL)
+        for obj_str in obj_matches:
+            try:
+                obj = json.loads(obj_str)
+                if isinstance(obj, dict) and 'message_index' in obj:
+                    objects.append(obj)
+            except:
+                pass
+        
+        return objects if objects else None
         
         # Валидируем и нормализуем каждое сообщение
         for i, item in enumerate(data):
