@@ -16,7 +16,7 @@ class Dialog(BaseModel):
     user_id: str = ""
     session_id: str = ""
     created_at: str
-    scenario: str = ""
+    scenario: str = Field(..., validation_alias="scenario_type")
     messages: List[Message]
     
     @property
@@ -41,7 +41,9 @@ class Dialog(BaseModel):
     
     @property
     def total_tokens(self) -> int:
-        return sum(len(m.content) for m in self.messages)
+        from token_counter import TokenCounter
+        counter = TokenCounter()
+        return counter.count_messages(self.messages).total_tokens
     
     @property
     def message_count(self) -> int:

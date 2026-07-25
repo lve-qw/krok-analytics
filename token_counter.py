@@ -18,13 +18,17 @@ class TokenCounter:
         tool_tokens = 0
 
         for msg in messages:
-            tokens = self.count_tokens(msg.content)
             if msg.role == "user":
-                user_tokens += tokens
+                user_tokens += self.count_tokens(msg.content)
             elif msg.role == "assistant":
-                assistant_tokens += tokens
+                assistant_tokens += self.count_tokens(msg.content)
             elif msg.role == "tool":
-                tool_tokens += tokens
+                tool_content = msg.content or ""
+                if msg.arguments:
+                    tool_content += str(msg.arguments)
+                if msg.result:
+                    tool_content += str(msg.result)
+                tool_tokens += self.count_tokens(tool_content)
 
         total = user_tokens + assistant_tokens + tool_tokens
         estimated_cost = (total / 1000) * 0.0001
