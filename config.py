@@ -1,5 +1,5 @@
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 
@@ -28,42 +28,54 @@ class ClusteringConfig:
 
 @dataclass
 class PathsConfig:
-    base_dir: Path = Path(__file__).parent
-    data_dir: Path = base_dir / "data"
-    dialogs_dir: Path = data_dir / "dialogs"
-    outputs_dir: Path = base_dir / "outputs"
-    models_dir: Path = base_dir / "models"
-    classes_file: Path = data_dir / "classes.csv"
+    base_dir: Path = field(default_factory=lambda: Path(__file__).parent)
+    data_dir: Path = field(default=None)
+    dialogs_dir: Path = field(default=None)
+    outputs_dir: Path = field(default=None)
+    models_dir: Path = field(default=None)
+    classes_file: Path = field(default=None)
+    
+    def __post_init__(self):
+        if self.data_dir is None:
+            self.data_dir = self.base_dir / "data"
+        if self.dialogs_dir is None:
+            self.dialogs_dir = self.data_dir / "dialogs"
+        if self.outputs_dir is None:
+            self.outputs_dir = self.base_dir / "outputs"
+        if self.models_dir is None:
+            self.models_dir = self.base_dir / "models"
+        if self.classes_file is None:
+            self.classes_file = self.data_dir / "classes.csv"
 
 
 @dataclass
 class IntegrationsConfig:
-    FIXED_INTEGRATIONS: tuple = (
+    FIXED_INTEGRATIONS: tuple = field(default_factory=lambda: (
         "Outlook", "Exchange", "Mail", "Calendar", "CRM", "Jira", "Confluence",
         "ISUP", "Excel", "Word", "PowerPoint", "Teams", "Slack", "Telegram",
         "SharePoint", "OneDrive", "Project", "Contacts", "SQL", "REST API",
         "Browser", "Internet", "Filesystem"
-    )
+    ))
 
 
 @dataclass
 class ToolsConfig:
-    FIXED_TOOLS: tuple = (
+    FIXED_TOOLS: tuple = field(default_factory=lambda: (
         "web_search", "browser", "mail", "calendar", "contacts", "crm", "jira",
         "confluence", "python", "sql", "excel", "filesystem", "presentation",
         "word", "powerpoint", "ocr", "speech_to_text", "text_to_speech",
         "translator", "summarizer", "image_generation"
-    )
+    ))
 
 
 @dataclass
 class Config:
-    models: ModelConfig = ModelConfig()
-    classification: ClassificationConfig = ClassificationConfig()
-    clustering: ClusteringConfig = ClusteringConfig()
-    paths: PathsConfig = PathsConfig()
-    integrations: IntegrationsConfig = IntegrationsConfig()
-    tools: ToolsConfig = ToolsConfig()
+    models: ModelConfig = field(default_factory=ModelConfig)
+    classification: ClassificationConfig = field(default_factory=ClassificationConfig)
+    clustering: ClusteringConfig = field(default_factory=ClusteringConfig)
+    paths: PathsConfig = field(default_factory=PathsConfig)
+    integrations: IntegrationsConfig = field(default_factory=IntegrationsConfig)
+    tools: ToolsConfig = field(default_factory=ToolsConfig)
 
 
 config = Config()
