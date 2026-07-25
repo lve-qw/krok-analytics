@@ -312,6 +312,48 @@ body { margin: 0; background: var(--page); }
 .card-toggle label { padding: 5px 10px; cursor: pointer; border: 1px solid var(--hairline); }
 .card-toggle input { margin-right: 6px; accent-color: var(--signal); }
 
+/* ---------- assumptions ------------------------------------------------ */
+
+/* The only inputs on the page that change a number rather than filter it, so
+   they are laid out as a small instrument panel and never hidden in a modal:
+   an assumption a reader cannot see is an assumption they cannot challenge. */
+.assume-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin: 6px 0 4px; }
+.assume-cell-wide { grid-column: 1 / -1; }
+.assume-input {
+  width: 100%; padding: 8px 10px;
+  font-family: var(--mono); font-size: 13px;
+  color: var(--text-primary); background: var(--raised);
+  border: 1px solid var(--hairline); border-radius: 0;
+}
+.assume-input:focus { border-color: var(--signal); outline: none; }
+/* Dash 4 renders the slider and the number field with its own classes and its
+   own light palette; left alone the track came out violet and the value red. */
+.dash-slider-track { background: var(--dim) !important; }
+.dash-slider-range { background: var(--signal) !important; }
+.dash-slider-thumb, .dash-slider-container [role="slider"] {
+  background: var(--surface) !important; border: 2px solid var(--signal) !important;
+  box-shadow: none !important;
+}
+.dash-slider-mark { color: var(--muted) !important; font-family: var(--mono) !important; font-size: 10px !important; }
+.dash-input-container {
+  background: var(--raised) !important; border: 1px solid var(--hairline) !important;
+  border-radius: 0 !important;
+}
+.dash-input-container:focus-within { border-color: var(--signal) !important; }
+.dash-input-element, .dash-range-slider-input {
+  background: transparent !important; color: var(--text-primary) !important;
+  font-family: var(--mono) !important; font-size: 13px !important;
+  border-color: var(--hairline) !important;
+}
+.dash-input-stepper { color: var(--muted) !important; background: transparent !important; border: none !important; }
+.dash-input-stepper:hover { color: var(--signal) !important; }
+.assume-cell { padding-bottom: 18px; }
+.verdict {
+  margin: 18px 0 6px; padding: 12px 14px;
+  background: var(--signal-soft); border-left: 2px solid var(--signal);
+  font-size: 13.5px; line-height: 1.5; color: var(--text-primary);
+}
+
 /* ---------- supporting numbers ----------------------------------------- */
 
 .stat-strip {

@@ -254,6 +254,49 @@ def test_russian_plural_agreement(count: int, expected: str):
     assert metrics.plural(count, "диалог", "диалога", "диалогов") == expected
 
 
+# --- экономика: A против B ----------------------------------------------
+
+
+def test_minute_rate_follows_the_agreed_inputs():
+    # 400 000 ₽ × 1,30 взносы ÷ 164,33 ч ÷ 60
+    assert metrics.minute_rate() == pytest.approx(52.74, abs=0.01)
+
+
+def test_breakeven_reproduces_the_defence_number(frame: pd.DataFrame):
+    result = metrics.economics(frame, tco_month=883_043, requests_month=1_936)
+    assert result["breakeven_minutes"] == pytest.approx(14.4, abs=0.05)
+
+
+def test_at_the_threshold_benefit_equals_cost(frame: pd.DataFrame):
+    result = metrics.economics(frame, requests_month=1_936)
+    assert result["net_month"] == pytest.approx(0.0, abs=1.0)
+
+
+def test_more_requests_lower_the_threshold(frame: pd.DataFrame):
+    few = metrics.economics(frame, requests_month=1_936)["breakeven_minutes"]
+    many = metrics.economics(frame, requests_month=10_000)["breakeven_minutes"]
+    assert many < few
+    assert many == pytest.approx(2.8, abs=0.05)
+
+
+def test_benefit_and_fte_follow_the_chosen_minutes(frame: pd.DataFrame):
+    result = metrics.economics(frame, requests_month=1_936, minutes_saved=30)
+    assert result["hours_saved"] == pytest.approx(1_936 * 30 / 60)
+    assert result["fte_saved"] == pytest.approx(1_936 * 30 / 60 / metrics.HOURS_MONTH)
+    assert result["net_month"] > 0
+
+
+def test_monthly_requests_extrapolates_the_observed_rate(frame: pd.DataFrame):
+    # три диалога за два календарных дня
+    assert metrics.monthly_requests(frame) == pytest.approx(45.0)
+
+
+def test_economics_survives_an_empty_frame(frame: pd.DataFrame):
+    result = metrics.economics(frame.iloc[0:0])
+    assert result["breakeven_minutes"] == 0.0
+    assert result["fte_saved"] == 0.0
+
+
 # --- filters ------------------------------------------------------------
 
 

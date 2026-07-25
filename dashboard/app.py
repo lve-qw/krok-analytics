@@ -52,6 +52,12 @@ def _export_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return export
 
 
+def _minutes(value: float) -> str:
+    """Минуты с запятой и без хвоста «,0»."""
+
+    return f"{value:.1f}".rstrip("0").rstrip(".").replace(".", ",") or "0"
+
+
 def _clicked_value(click_data) -> str | None:
     points = (click_data or {}).get("points") or []
     if not points:
@@ -92,6 +98,7 @@ def create_app(target: str | Path) -> Dash:
         dataset.notes,
         metrics.headline(frame),
         metrics.spend_parts(frame),
+        metrics.economics(frame),
     )
 
     filter_inputs = Input({"type": "filter", "key": ALL}, "value")
@@ -257,6 +264,66 @@ def create_app(target: str | Path) -> Dash:
                 limit=12,
             ),
             _table_records(rows),
+        )
+
+    @app.callback(
+        Output("chart-breakeven", "figure"),
+        Output("stat-economics", "children"),
+        Output("economics-verdict", "children"),
+        Input("assume-minutes", "value"),
+        Input("assume-tco", "value"),
+        Input("assume-requests", "value"),
+        Input("assume-salary", "value"),
+        Input("theme-store", "data"),
+    )
+    def economics(minutes, tco, requests, salary, theme_name):
+        active_theme = get_theme(theme_name)
+        figures = metrics.economics(
+            frame,
+            tco_month=float(tco or 0),
+            requests_month=float(requests or 0),
+            salary_month=float(salary or 0),
+            minutes_saved=float(minutes or 0),
+        )
+        breakeven = figures["breakeven_minutes"]
+        chosen = figures["minutes_saved"]
+        net = figures["net_month"]
+
+        if not figures["value_per_minute"]:
+            verdict = "Задайте объём запросов и оклад, чтобы посчитать порог."
+        elif abs(chosen - breakeven) < 0.05:
+            # The slider opens exactly on the threshold, and «не хватает 0 мин»
+            # would be a rounding artefact rather than a verdict.
+            verdict = (
+                f"B = A: ровно на пороге. При {_minutes(breakeven)} мин на запрос выгода "
+                f"{integer(figures['benefit_month'])} ₽ в месяц сходится с затратами."
+            )
+        elif chosen >= breakeven:
+            verdict = (
+                f"B > A: при {_minutes(chosen)} мин на запрос выгода "
+                f"{integer(figures['benefit_month'])} ₽ против затрат "
+                f"{integer(figures['tco_month'])} ₽ в месяц, чистыми +{integer(net)} ₽."
+            )
+        else:
+            verdict = (
+                f"B < A: не хватает {_minutes(breakeven - chosen)} мин на запрос, "
+                f"минус {integer(abs(net))} ₽ в месяц."
+            )
+
+        return (
+            charts.breakeven_chart(figures, active_theme),
+            layout.stat_strip(
+                [
+                    ("порог, мин на запрос", _minutes(breakeven)),
+                    ("затраты на запрос", f"{integer(figures['cost_per_request'])} ₽"),
+                    ("ставка минуты", f"{figures['rate_per_minute']:.1f} ₽".replace(".", ",")),
+                    (
+                        "эквивалент высвобожденного времени",
+                        f"{figures['fte_saved']:.2f} FTE".replace(".", ","),
+                    ),
+                ]
+            ).children,
+            verdict,
         )
 
     @app.callback(

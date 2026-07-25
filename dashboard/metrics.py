@@ -549,6 +549,91 @@ def insights(frame: pd.DataFrame) -> dict[str, str]:
     }
 
 
+# --- экономика: A против B ----------------------------------------------
+
+#: Оклад среднего FTE, задан организаторами кейса.
+SALARY_MONTH = 400_000.0
+#: Страховые взносы поверх оклада.
+PAYROLL_OVERHEAD = 1.30
+#: Часов в месяце: 1972 ч производственного календаря РФ на 2026 ÷ 12.
+HOURS_MONTH = 164.33
+#: Доля высвобожденного времени, которая превращается в результат, а не в
+#: паузу. Полоса Forrester TEI 50–70 %, взята середина.
+CAPTURE_RATE = 0.6
+#: TCO пилота в месяц. 88 % этой суммы — команда поддержки, а не токены.
+TCO_MONTH = 883_043.0
+
+
+def minute_rate(salary_month: float = SALARY_MONTH) -> float:
+    """Стоимость рабочей минуты сотрудника со взносами."""
+
+    return salary_month * PAYROLL_OVERHEAD / HOURS_MONTH / 60
+
+
+def monthly_requests(frame: pd.DataFrame) -> float:
+    """Запросов в месяц по темпу выгрузки.
+
+    Это пересчёт наблюдаемого темпа на 30 дней, а не измерение: в выгрузке
+    один период, и он короче месяца.
+    """
+
+    base = overview(frame)
+    if not base["total_dialogs"] or not base["days"]:
+        return 0.0
+    return base["total_dialogs"] / base["days"] * 30
+
+
+def economics(
+    frame: pd.DataFrame,
+    *,
+    tco_month: float = TCO_MONTH,
+    requests_month: float | None = None,
+    salary_month: float = SALARY_MONTH,
+    minutes_saved: float | None = None,
+    capture: float = CAPTURE_RATE,
+) -> dict:
+    """Порог безубыточности и выгода при выбранной экономии минут.
+
+    Затраты известны, экономия минут — нет: её нет ни в одном логе, потому что
+    нигде не записано, сколько задача заняла бы без агента. Поэтому минуты
+    остаются входом, а метрика отвечает на обратный вопрос — сколько нужно
+    экономить, чтобы вложение окупилось:
+
+        порог = TCO / (запросов × ₽/мин × доля реализации)
+
+    Прямая стоимость инференса тоже считается, но отдельно: на ней вопрос
+    «B > A» не решается, она на два порядка меньше полного TCO.
+    """
+
+    requests = monthly_requests(frame) if requests_month is None else float(requests_month)
+    rate = minute_rate(salary_month)
+    value_per_minute = requests * rate * capture
+
+    breakeven = tco_month / value_per_minute if value_per_minute else 0.0
+    minutes = breakeven if minutes_saved is None else float(minutes_saved)
+
+    benefit = minutes * value_per_minute
+    hours_saved = requests * minutes / 60
+    token_cost = float(_column(frame, "estimated_cost").sum())
+
+    return {
+        "requests_month": requests,
+        "salary_month": salary_month,
+        "rate_per_minute": rate,
+        "tco_month": tco_month,
+        "cost_per_request": tco_month / requests if requests else 0.0,
+        "breakeven_minutes": breakeven,
+        "minutes_saved": minutes,
+        "benefit_month": benefit,
+        "net_month": benefit - tco_month,
+        "hours_saved": hours_saved,
+        "fte_saved": hours_saved / HOURS_MONTH,
+        "capture": capture,
+        "value_per_minute": value_per_minute,
+        "token_cost_period": token_cost,
+    }
+
+
 def spend_parts(frame: pd.DataFrame) -> list[dict]:
     """The token split, largest part first, formatted for the hero bar."""
 

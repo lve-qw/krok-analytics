@@ -348,6 +348,73 @@ def grouped_bar(
     return figure
 
 
+def breakeven_chart(economics: dict, theme: Theme, height: int = 340) -> go.Figure:
+    """Затраты против выгоды, где по оси лежит то, чего в данных нет.
+
+    Затраты — горизонтальная линия: они от экономии минут не зависят. Выгода —
+    луч из нуля. Их пересечение и есть порог. Так вопрос «откуда вы взяли
+    15 минут» превращается в «верите ли вы, что диалог экономит больше N» —
+    и это вопрос к залу, а не к докладчику.
+    """
+
+    value_per_minute = economics["value_per_minute"]
+    if value_per_minute <= 0:
+        return empty(theme, height=height, text="нет запросов для расчёта")
+
+    breakeven = economics["breakeven_minutes"]
+    chosen = economics["minutes_saved"]
+    limit = max(breakeven * 2, chosen * 1.35, 5)
+    minutes = [limit * step / 40 for step in range(41)]
+    benefit = [value_per_minute * minute for minute in minutes]
+    tco = economics["tco_month"]
+
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=minutes, y=[tco] * len(minutes), mode="lines", name="Затраты",
+            line=dict(color=theme.text_secondary, width=1.5, dash="dash"),
+            hovertemplate="затраты %{y:,.0f} ₽/мес<extra></extra>",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=minutes, y=benefit, mode="lines", name="Выгода",
+            line=dict(color=theme.series[0], width=2.5),
+            hovertemplate="при %{x:.1f} мин — выгода %{y:,.0f} ₽/мес<extra></extra>",
+        )
+    )
+    figure.add_vline(
+        x=breakeven,
+        line=dict(color=theme.signal, width=1, dash="dot"),
+        annotation_text=f"ПОРОГ {breakeven:.1f} МИН".replace(".", ","),
+        annotation_position="top left",
+        annotation_font=dict(color=theme.signal, family=MONO, size=10),
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=[chosen], y=[economics["benefit_month"]], mode="markers",
+            marker=dict(color=theme.signal, size=13, line=dict(color=theme.surface, width=2)),
+            hovertemplate=(
+                f"выбрано {chosen:.1f} мин".replace(".", ",")
+                + "<br>выгода %{y:,.0f} ₽/мес<extra></extra>"
+            ),
+        )
+    )
+    # Both lines are named on the plot: a legend for two lines is one legend
+    # too many, and on a projector a colour key is read last or not at all.
+    figure.add_annotation(
+        x=limit, y=tco, xanchor="right", yanchor="bottom", showarrow=False,
+        text="ЗАТРАТЫ", font=dict(color=theme.muted, family=MONO, size=10),
+    )
+    figure.add_annotation(
+        x=limit, y=value_per_minute * limit, xanchor="right", yanchor="top", showarrow=False,
+        text="ВЫГОДА", font=dict(color=theme.series[0], family=MONO, size=10),
+    )
+    figure.update_xaxes(title_text="МИНУТ ЭКОНОМИИ НА ЗАПРОС", showgrid=True, rangemode="tozero")
+    figure.update_yaxes(title_text="₽ В МЕСЯЦ", showgrid=True, rangemode="tozero", tickformat=",.0f")
+    return _base(figure, theme, height=height)
+
+
 def confidence_histogram(values: pd.Series, theme: Theme, threshold: float, height: int = 260) -> go.Figure:
     """Distribution of classifier confidence with the low-confidence cut."""
 

@@ -446,6 +446,104 @@ def catalogue_section() -> html.Div:
     )
 
 
+def economics_section(default: dict) -> html.Div:
+    """Окупаемость: единственный блок, где на входе стоит допущение.
+
+    Все допущения вынесены в поля ввода на самой странице. Спрятать их внутрь
+    числа — обычная практика ROI-слайдов и единственный способ проиграть первый
+    же вопрос жюри.
+    """
+
+    return section(
+        "Экономика",
+        "Окупается ли?",
+        html.Div(
+            [
+                card(
+                    "Выгода против затрат",
+                    "Затраты не зависят от экономии минут — это горизонталь. "
+                    "Выгода = запросов × минут × ₽/мин × доля реализации — это луч. "
+                    "Пересечение и есть порог безубыточности.",
+                    "Минут экономии нет ни в одном логе: нигде не записано, сколько "
+                    "задача заняла бы без агента. Поэтому они на оси, а не внутри числа.",
+                    graph("chart-breakeven"),
+                    stat_strip([], "stat-economics"),
+                ),
+                card(
+                    "Допущения",
+                    "Ставка минуты = оклад × 1,30 взносы ÷ 164,33 ч ÷ 60. "
+                    "164,33 ч — это 1972 ч производственного календаря РФ 2026 ÷ 12. "
+                    "Доля реализации 0,6 — середина полосы Forrester TEI 50–70 %.",
+                    "Меняйте цифры: страница пересчитается вместе с ними.",
+                    html.Div(
+                        [
+                            html.Div(
+                                [
+                                    html.Label("Экономия на запрос, мин", className="filter-label"),
+                                    dcc.Slider(
+                                        id="assume-minutes",
+                                        min=0,
+                                        max=30,
+                                        step=0.5,
+                                        value=round(default["breakeven_minutes"], 1),
+                                        marks={0: "0", 10: "10", 20: "20", 30: "30"},
+                                    ),
+                                ],
+                                className="assume-cell assume-cell-wide",
+                            ),
+                            html.Div(
+                                [
+                                    html.Label("TCO, ₽ в месяц", className="filter-label"),
+                                    dcc.Input(
+                                        id="assume-tco",
+                                        type="number",
+                                        value=int(default["tco_month"]),
+                                        min=0,
+                                        step=1000,
+                                        className="assume-input",
+                                    ),
+                                ],
+                                className="assume-cell",
+                            ),
+                            html.Div(
+                                [
+                                    html.Label("Запросов в месяц", className="filter-label"),
+                                    dcc.Input(
+                                        id="assume-requests",
+                                        type="number",
+                                        value=int(default["requests_month"]),
+                                        min=1,
+                                        step=100,
+                                        className="assume-input",
+                                    ),
+                                ],
+                                className="assume-cell",
+                            ),
+                            html.Div(
+                                [
+                                    html.Label("Оклад FTE, ₽ в месяц", className="filter-label"),
+                                    dcc.Input(
+                                        id="assume-salary",
+                                        type="number",
+                                        value=int(default["salary_month"]),
+                                        min=0,
+                                        step=10000,
+                                        className="assume-input",
+                                    ),
+                                ],
+                                className="assume-cell",
+                            ),
+                        ],
+                        className="assume-grid",
+                    ),
+                    html.P(id="economics-verdict", className="verdict"),
+                ),
+            ],
+            className="chart-grid",
+        ),
+    )
+
+
 def table_section() -> html.Div:
     """The raw rows. No generated conclusion here — the table is the evidence."""
 
@@ -524,6 +622,7 @@ def build(
     notes: list[str],
     headline: tuple[str, str, str],
     spend: list[dict],
+    economics: dict,
 ) -> html.Div:
     lead, number, tail = headline
     mark = (spend[0]["share"], spend[0]["percent"]) if spend else None
@@ -582,6 +681,7 @@ def build(
             ),
             html.Div(id="result-count", className="result-count"),
             kpi_block(cards),
+            economics_section(economics),
             tokens_section(),
             automation_section(),
             reliability_section(),
