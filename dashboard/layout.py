@@ -55,11 +55,33 @@ def card(title: str, tip: str, subtitle: str, *children, className: str = "card"
     return html.Div(body, className=className)
 
 
+def rail(mark: tuple[float, str] | None = None, className: str = "rail") -> html.Div:
+    """The measurement rail: a hairline, a comb of ticks, one amber mark.
+
+    ``mark`` places that mark at a position on the scale and labels it, so the
+    rail states a value instead of decorating the page. Without a mark it is
+    the section divider.
+    """
+
+    children = []
+    if mark is not None:
+        position, label = mark
+        children.append(
+            html.Span(
+                className="rail-mark",
+                style={"left": f"{max(0.0, min(100.0, position)):.2f}%"},
+                **{"data-label": label},
+            )
+        )
+    return html.Div(children, className=className)
+
+
 def section(kicker: str, question: str, body: html.Div) -> html.Div:
     """A question and the charts that answer it."""
 
     return html.Div(
         [
+            rail(className="rail section-rail"),
             html.Div(
                 [
                     html.Span(kicker, className="section-kicker"),
@@ -71,6 +93,62 @@ def section(kicker: str, question: str, body: html.Div) -> html.Div:
         ],
         className="metric-section",
     )
+
+
+def hero(headline: list, spend: list) -> html.Div:
+    """The thesis of the page: one sentence and the split it comes from."""
+
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span("главное", className="hero-tag"),
+                            html.P(headline, id="hero-line", className="hero-line"),
+                        ]
+                    ),
+                    html.Div(spend, id="hero-spend", className="spend"),
+                ],
+                className="hero-body",
+            )
+        ],
+        className="hero",
+    )
+
+
+def spend_block(parts: list[dict]) -> list:
+    """The token split drawn as one bar with the parts named under it."""
+
+    if not parts:
+        return [html.Div("нет расхода в выбранных строках", className="chip-none")]
+    return [
+        html.Div(
+            [
+                html.Div(
+                    className=f"spend-part spend-part-{index}",
+                    style={"flexGrow": part["share"] or 0.001},
+                    title=f"{part['key']}: {part['value']}",
+                )
+                for index, part in enumerate(parts)
+            ],
+            className="spend-bar",
+        ),
+        html.Div(
+            [
+                html.Div(
+                    [
+                        html.Span(part["key"], className="key"),
+                        html.Span(part["percent"], className="val"),
+                        html.Span(part["value"], className="sub"),
+                    ],
+                    className=f"spend-item spend-item-{index}",
+                )
+                for index, part in enumerate(parts)
+            ],
+            className="spend-legend",
+        ),
+    ]
 
 
 def stat_strip(items: list[tuple[str, str]], element_id: str | None = None) -> html.Div:
@@ -229,13 +307,6 @@ def tokens_section() -> html.Div:
         html.Div(
             [
                 card(
-                    "Состав расхода",
-                    "Σ user_tokens, Σ assistant_tokens, Σ tool_tokens. Сумма трёх частей "
-                    "равна total_tokens.",
-                    "Запрос пользователя, ответ агента и трафик инструментов.",
-                    graph("chart-token-split"),
-                ),
-                card(
                     "Расход по сценариям",
                     "Σ total_tokens внутри кластера. Средний расход на диалог почти "
                     "одинаков во всех сценариях, поэтому этот рейтинг повторяет частоту "
@@ -243,8 +314,16 @@ def tokens_section() -> html.Div:
                     "Какие сценарии съедают бюджет.",
                     graph("chart-tokens-scenario"),
                 ),
+                card(
+                    "Профиль по часам",
+                    "Группировка created_at по часу UTC. Это профиль доступного периода, "
+                    "а не график роста: в выгрузке один день.",
+                    "Когда приходили обращения и расходовались токены.",
+                    metric_toggle("hourly-metric"),
+                    graph("chart-hourly"),
+                ),
             ],
-            className="chart-grid chart-grid-even",
+            className="chart-grid",
         ),
     )
 
@@ -314,7 +393,7 @@ def reliability_section() -> html.Div:
 def usage_section() -> html.Div:
     return section(
         "Нагрузка",
-        "Кто и когда пользуется?",
+        "Кто пользуется?",
         html.Div(
             [
                 card(
@@ -324,17 +403,10 @@ def usage_section() -> html.Div:
                     "Кто создал больше диалогов и на чьи диалоги пришлось больше токенов.",
                     metric_toggle("users-metric"),
                     graph("chart-users"),
-                ),
-                card(
-                    "Нагрузка по часам",
-                    "Группировка created_at по часу UTC. Это профиль доступного периода, "
-                    "а не график роста или сезонности: в выгрузке один день.",
-                    "Когда в пределах выгрузки приходили обращения.",
-                    metric_toggle("hourly-metric"),
-                    graph("chart-hourly"),
+                    className="card card-full",
                 ),
             ],
-            className="chart-grid",
+            className="chart-grid chart-grid-even",
         ),
     )
 
@@ -450,7 +522,11 @@ def build(
     cards: list[Kpi],
     theme: Theme,
     notes: list[str],
+    headline: tuple[str, str, str],
+    spend: list[dict],
 ) -> html.Div:
+    lead, number, tail = headline
+    mark = (spend[0]["share"], spend[0]["percent"]) if spend else None
     return html.Div(
         [
             dcc.Store(id="theme-store", data=theme.name),
@@ -459,11 +535,10 @@ def build(
                 [
                     html.Div(
                         [
-                            html.Span("КРОК · ПРОМПТ-РАДАР", className="brand-mark"),
+                            html.Span("КРОК · Промпт-радар", className="brand-mark"),
                             html.H1("Аналитика диалогов с ИИ-агентом", className="app-title"),
                             html.P(
-                                "Все метрики из metrics.md по одной выгрузке pipeline: "
-                                "расход, качество, сценарии и риски",
+                                "Расход, сценарии и риски по одной выгрузке pipeline",
                                 className="app-subtitle",
                             ),
                         ],
@@ -473,7 +548,7 @@ def build(
                         [
                             html.Div(
                                 [
-                                    html.Span("Выгрузка", className="header-meta-label"),
+                                    html.Span("в выгрузке", className="header-meta-label"),
                                     html.Strong(f"{len(frame)} диалогов"),
                                 ],
                                 className="header-meta",
@@ -489,6 +564,8 @@ def build(
                 ],
                 className="app-header",
             ),
+            rail(mark),
+            hero([lead, html.B(number), tail], spend_block(spend)),
             warnings_strip(notes),
             filter_bar(frame),
             html.Div(

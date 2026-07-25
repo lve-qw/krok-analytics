@@ -549,6 +549,55 @@ def insights(frame: pd.DataFrame) -> dict[str, str]:
     }
 
 
+def spend_parts(frame: pd.DataFrame) -> list[dict]:
+    """The token split, largest part first, formatted for the hero bar."""
+
+    measured = tokens(frame)
+    total = measured["total_tokens"]
+    if not total:
+        return []
+    rows = [
+        ("Инструменты", measured["tool_tokens"]),
+        ("Ответы агента", measured["assistant_tokens"]),
+        ("Запросы людей", measured["user_tokens"]),
+    ]
+    rows.sort(key=lambda row: row[1], reverse=True)
+    parts = []
+    for key, value in rows:
+        share = _share(value, total)
+        parts.append(
+            {
+                "key": key,
+                "value": f"{integer(value)} токенов",
+                "share": share,
+                "percent": "<1 %" if 0 < share < 1 else f"{percent(share)} %",
+            }
+        )
+    return parts
+
+
+def headline(frame: pd.DataFrame) -> tuple[str, str, str]:
+    """The one sentence the page opens with, split for typographic emphasis.
+
+    Returns the text before the highlighted number, the number itself and the
+    text after it, so the layout can set the number in the signal colour
+    without any HTML being assembled inside a metric function.
+    """
+
+    if frame.empty:
+        return ("Фильтры не оставили ни одной строки", "", "")
+    parts = spend_parts(frame)
+    if not parts:
+        return ("В выбранных строках", " нет израсходованных токенов", "")
+    top = parts[0]
+    tail = {
+        "Инструменты": " бюджета уходит на трафик инструментов, а не на ответы человеку",
+        "Ответы агента": " бюджета уходит на ответы человеку",
+        "Запросы людей": " бюджета — это текст запросов людей",
+    }[top["key"]]
+    return ("", top["percent"], tail)
+
+
 def kpis(frame: pd.DataFrame) -> list[Kpi]:
     """The eight headline numbers, four measured and four model-derived."""
 

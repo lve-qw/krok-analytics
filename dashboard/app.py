@@ -18,7 +18,7 @@ from dash import ALL, Dash, Input, Output, State, callback_context, dcc, html, n
 
 from dashboard import charts, data, filters, layout, metrics
 from dashboard.metrics import LOW_CONFIDENCE, integer, percent
-from dashboard.styles import STYLESHEET
+from dashboard.styles import FONTS, STYLESHEET
 from dashboard.theme import get_theme
 
 DEFAULT_INPUT = "outputs"
@@ -65,12 +65,18 @@ def _clicked_value(click_data) -> str | None:
 def create_app(target: str | Path) -> Dash:
     dataset = data.load(target)
     frame = dataset.frame
-    theme = get_theme("light")
+    theme = get_theme("dark")
 
-    app = Dash(__name__, title="Промпт-радар · метрики")
+    app = Dash(__name__, title="Промпт-радар")
+    # The faces are pulled from the CDN with a system fallback in the stack, so
+    # a laptop without network still renders the page, just in system type.
     app.index_string = f"""<!DOCTYPE html>
-<html>
-<head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}<style>{STYLESHEET}</style></head>
+<html lang="ru">
+<head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="{FONTS}">
+<style>{STYLESHEET}</style></head>
 <body>{{%app_entry%}}<footer>{{%config%}}{{%scripts%}}{{%renderer%}}</footer></body>
 </html>"""
 
@@ -79,7 +85,14 @@ def create_app(target: str | Path) -> Dash:
     for note in dataset.notes:
         print(f"  ! {note}", file=sys.stderr)
 
-    app.layout = layout.build(frame, metrics.kpis(frame), theme, dataset.notes)
+    app.layout = layout.build(
+        frame,
+        metrics.kpis(frame),
+        theme,
+        dataset.notes,
+        metrics.headline(frame),
+        metrics.spend_parts(frame),
+    )
 
     filter_inputs = Input({"type": "filter", "key": ALL}, "value")
     filter_states = State({"type": "filter", "key": ALL}, "id")
@@ -90,7 +103,8 @@ def create_app(target: str | Path) -> Dash:
     @app.callback(
         Output("kpi-container", "children"),
         Output("result-count", "children"),
-        Output("chart-token-split", "figure"),
+        Output("hero-line", "children"),
+        Output("hero-spend", "children"),
         Output("chart-tokens-scenario", "figure"),
         Output("chart-scenario-map", "figure"),
         Output("chart-complexity-auto", "figure"),
@@ -128,6 +142,9 @@ def create_app(target: str | Path) -> Dash:
         confidence_stats = metrics.confidence(filtered)
         cards = metrics.kpis(filtered)
 
+        lead, number, tail = metrics.headline(filtered)
+        spend = metrics.spend_parts(filtered)
+
         result = f"Показано {len(filtered)} из {len(frame)} диалогов."
         if len(rows) != len(filtered):
             selected = (selection or {}).get("value")
@@ -136,8 +153,9 @@ def create_app(target: str | Path) -> Dash:
         return (
             [layout.kpi_row(cards[:4]), layout.kpi_row(cards[4:])],
             result,
+            [lead, html.B(number), tail],
+            layout.spend_block(spend),
             # Куда уходят токены?
-            charts.donut(metrics.token_split(filtered), active_theme),
             charts.ranked_bar(
                 metrics.tokens_by_scenario(filtered),
                 active_theme,
@@ -145,8 +163,6 @@ def create_app(target: str | Path) -> Dash:
                 limit=10,
                 unit="токенов",
                 divisor=1000,
-                axis_title="Токены, тыс.",
-                color=active_theme.series[0],
             ),
             # Что автоматизировать первым?
             charts.scenario_scatter(metrics.scenario_map(filtered), active_theme),
@@ -162,7 +178,8 @@ def create_app(target: str | Path) -> Dash:
                 active_theme,
                 limit=8,
                 color=active_theme.critical,
-                height=260,
+                highlight=active_theme.critical,
+                height=250,
             ),
             layout.stat_strip(
                 [
@@ -204,7 +221,6 @@ def create_app(target: str | Path) -> Dash:
                 active_theme,
                 label="label",
                 limit=10,
-                color=active_theme.series[0],
             ),
             layout.stat_strip(
                 [
@@ -220,7 +236,6 @@ def create_app(target: str | Path) -> Dash:
                 integration_stats["integration_counts"],
                 active_theme,
                 limit=12,
-                color=active_theme.series[2],
             ),
             layout.stat_strip(
                 [
@@ -240,7 +255,6 @@ def create_app(target: str | Path) -> Dash:
                 integration_stats["tool_counts"],
                 active_theme,
                 limit=12,
-                color=active_theme.series[1],
             ),
             _table_records(rows),
         )
@@ -279,8 +293,6 @@ def create_app(target: str | Path) -> Dash:
         children = [
             html.Span([f"{label}: ", html.B(text)], className="chip") for label, text in active
         ]
-        if not active and not selection:
-            children.append(html.Span("Показаны все диалоги", className="chip-none"))
         if not selection:
             return children, None, HIDDEN
         return (
@@ -324,7 +336,7 @@ def create_app(target: str | Path) -> Dash:
         prevent_initial_call=True,
     )
     def toggle_theme(_clicks, current):
-        next_theme = "dark" if current == "light" else "light"
+        next_theme = "light" if current == "dark" else "dark"
         return next_theme, f"viz-root theme-{next_theme}"
 
     return app

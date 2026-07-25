@@ -1,9 +1,15 @@
 """Plotly figures for the dashboard.
 
-Colour carries one meaning per chart and nothing else: a single accent for
-measured volume, the copper accent for a highlighted extreme, and the muted
-``dim`` token for everything outside the current selection. Selection is a
-state, so it de-emphasises the rest instead of recolouring the chosen mark.
+Two rules hold every chart together.
+
+**Chrome is removed until only the data is left.** No plot frames, no legends
+where a direct label will do, no axis where the value is written on the mark.
+What remains is a hairline grid and mono tick labels, which is what makes the
+figures look like part of the page instead of a library's default output.
+
+**One amber mark per chart.** Amber is the answer: the biggest spender, the
+peak hour, the actionable quadrant, the candidates. Everything else is steel or
+dim. A chart where two things are bright is a chart with no point.
 """
 
 from __future__ import annotations
@@ -13,51 +19,48 @@ import plotly.graph_objects as go
 
 from dashboard.theme import Theme
 
-FONT = '"Avenir Next", "Segoe UI Variable", system-ui, sans-serif'
+BODY = '"Golos Text", system-ui, sans-serif'
+MONO = '"JetBrains Mono", "SFMono-Regular", Menlo, monospace'
 
 
 def _base(figure: go.Figure, theme: Theme, *, height: int = 300) -> go.Figure:
     figure.update_layout(
         height=height,
-        margin=dict(l=16, r=16, t=14, b=28),
-        paper_bgcolor=theme.surface,
-        plot_bgcolor=theme.surface,
-        font=dict(color=theme.text_primary, family=FONT, size=12),
+        margin=dict(l=8, r=14, t=10, b=26),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=theme.text_secondary, family=BODY, size=12),
         showlegend=False,
-        bargap=0.28,
+        bargap=0.42,
         hoverlabel=dict(
-            bgcolor=theme.surface,
+            bgcolor=theme.raised,
             font_color=theme.text_primary,
+            font_family=BODY,
             bordercolor=theme.guide,
         ),
     )
-    figure.update_xaxes(
+    axis = dict(
         showline=False,
         zeroline=False,
         gridcolor=theme.grid,
-        tickfont=dict(color=theme.muted),
-        title_font=dict(color=theme.muted, size=11),
+        tickfont=dict(color=theme.muted, family=MONO, size=10),
+        title_font=dict(color=theme.muted, family=MONO, size=9),
     )
-    figure.update_yaxes(
-        showline=False,
-        zeroline=False,
-        gridcolor=theme.grid,
-        tickfont=dict(color=theme.muted),
-        title_font=dict(color=theme.muted, size=11),
-    )
+    figure.update_xaxes(**axis)
+    figure.update_yaxes(**axis)
     return figure
 
 
-def empty(theme: Theme, height: int = 300, text: str = "Нет данных для выбранного фильтра") -> go.Figure:
+def empty(theme: Theme, height: int = 300, text: str = "нет данных для выбранного фильтра") -> go.Figure:
     figure = go.Figure()
     figure.add_annotation(
-        text=text,
+        text=text.upper(),
         x=0.5,
         y=0.5,
         xref="paper",
         yref="paper",
         showarrow=False,
-        font=dict(color=theme.muted),
+        font=dict(color=theme.muted, family=MONO, size=10),
     )
     figure.update_xaxes(visible=False)
     figure.update_yaxes(visible=False)
@@ -66,6 +69,22 @@ def empty(theme: Theme, height: int = 300, text: str = "Нет данных дл
 
 def _is_empty(data: pd.DataFrame, column: str) -> bool:
     return data is None or data.empty or column not in data or data[column].sum() == 0
+
+
+def _short(labels: pd.Series, limit: int = 32) -> pd.Series:
+    """Trim long categories and keep them unique.
+
+    A failure_reason can be a whole sentence; left whole it eats the plotting
+    area, and two bars sharing a trimmed label would be drawn on the same row.
+    """
+
+    trimmed = labels.astype(str).map(lambda text: text if len(text) <= limit else text[: limit - 1] + "…")
+    if trimmed.duplicated().any():
+        collisions = trimmed.duplicated(keep=False)
+        trimmed = trimmed.where(
+            ~collisions, trimmed + " " + trimmed.groupby(trimmed).cumcount().add(1).astype(str)
+        )
+    return trimmed
 
 
 def usage_bar(
@@ -77,79 +96,53 @@ def usage_bar(
     """Top users by dialogues or by consumed tokens."""
 
     if _is_empty(data, metric):
-        return empty(theme, height=340)
+        return empty(theme, height=330)
     ordered = data.sort_values(metric, ascending=True)
-    colors = [
-        theme.series[0] if selected is None or key == selected else theme.dim
-        for key in ordered["key"]
-    ]
-    suffix = " диалогов" if metric == "dialogues" else " токенов"
+    peak = ordered[metric].max()
+    colors = []
+    for key, value in zip(ordered["key"], ordered[metric]):
+        if selected is not None:
+            colors.append(theme.signal if key == selected else theme.dim)
+        else:
+            colors.append(theme.signal if value == peak else theme.series[0])
+    unit = "диалогов" if metric == "dialogues" else "токенов"
     figure = go.Figure(
         go.Bar(
             x=ordered[metric],
             y=ordered["key"],
             orientation="h",
             marker=dict(color=colors),
+            text=ordered[metric].map(lambda value: f"{value:,.0f}".replace(",", " ")),
+            textposition="outside",
+            textfont=dict(color=theme.muted, family=MONO, size=10),
+            cliponaxis=False,
             customdata=ordered[["key"]],
-            hovertemplate=f"%{{y}}<br>%{{x:,.0f}}{suffix}<extra></extra>",
+            hovertemplate=f"%{{y}}<br>%{{x:,.0f}} {unit}<extra></extra>",
         )
     )
-    figure.update_xaxes(title_text="Диалоги" if metric == "dialogues" else "Токены", showgrid=True)
-    figure.update_yaxes(title_text="")
-    return _base(figure, theme, height=max(340, 26 * len(ordered) + 90))
+    figure.update_xaxes(visible=False, range=[0, float(peak) * 1.16])
+    figure.update_yaxes(title_text="", tickfont=dict(color=theme.text_secondary, family=MONO, size=10))
+    return _base(figure, theme, height=max(320, 25 * len(ordered) + 60))
 
 
 def hourly_profile(data: pd.DataFrame, theme: Theme, metric: str) -> go.Figure:
     """Load by UTC hour: a profile of the available period, not a trend."""
 
     if _is_empty(data, metric):
-        return empty(theme, height=340)
+        return empty(theme, height=330)
     values = data[metric]
     peak = float(values.max())
     figure = go.Figure(
         go.Bar(
             x=[f"{hour:02d}" for hour in data["hour"]],
             y=values,
-            marker=dict(
-                color=[theme.series[1] if value == peak and peak else theme.dim for value in values]
-            ),
+            marker=dict(color=[theme.signal if value == peak else theme.dim for value in values]),
             hovertemplate="%{x}:00 UTC<br>%{y:,.0f}<extra></extra>",
         )
     )
-    figure.update_xaxes(title_text="Час UTC", dtick=2, showgrid=False)
-    figure.update_yaxes(title_text="Диалоги" if metric == "dialogues" else "Токены", showgrid=True)
-    return _base(figure, theme, height=340)
-
-
-def category_bar(
-    data: pd.DataFrame,
-    theme: Theme,
-    *,
-    value: str = "dialogs",
-    title: str = "Диалоги",
-    color: str | None = None,
-    height: int = 260,
-) -> go.Figure:
-    """A short vertical distribution: complexity, periodicity, language."""
-
-    if _is_empty(data, value):
-        return empty(theme, height=height)
-    total = float(data[value].sum())
-    figure = go.Figure(
-        go.Bar(
-            x=data["key"],
-            y=data[value],
-            marker=dict(color=color or theme.series[0]),
-            text=[f"{v / total * 100:.0f}%" for v in data[value]],
-            textposition="outside",
-            textfont=dict(color=theme.muted, size=11),
-            cliponaxis=False,
-            hovertemplate="%{x}<br>%{y:,.0f} диалогов<extra></extra>",
-        )
-    )
-    figure.update_xaxes(title_text="", showgrid=False)
-    figure.update_yaxes(title_text=title, showgrid=True, rangemode="tozero")
-    return _base(figure, theme, height=height)
+    figure.update_xaxes(title_text="ЧАС UTC", dtick=3, showgrid=False)
+    figure.update_yaxes(title_text="", showgrid=True, rangemode="tozero")
+    return _base(figure, theme, height=330)
 
 
 def ranked_bar(
@@ -160,86 +153,54 @@ def ranked_bar(
     value: str = "dialogs",
     limit: int = 12,
     color: str | None = None,
+    highlight: str | None = None,
     unit: str = "диалогов",
     divisor: int = 1,
     axis_title: str | None = None,
     height: int | None = None,
 ) -> go.Figure:
-    """A ranked horizontal bar for integrations, tools, clusters, failures.
+    """A ranked horizontal bar with the value written at the end of each bar.
 
-    ``divisor`` rescales the axis: token totals plotted raw come out as
-    «0.2M», which is neither Russian nor readable across a room.
+    The axis is dropped entirely: with the number on the mark, a scale would
+    only repeat it. ``divisor`` rescales the printed value — token totals shown
+    raw read as «0.2M», which is neither Russian nor legible across a room.
     """
 
+    del axis_title  # the axis is gone; the unit lives in the hover
     if _is_empty(data, value):
-        return empty(theme, height=height or 300)
+        return empty(theme, height=height or 280)
     ordered = data.head(limit).sort_values(value, ascending=True)
     raw = ordered[value]
-    if divisor != 1:
-        ordered = ordered.assign(**{value: raw / divisor})
-    # A failure_reason can be a whole sentence. Left whole it eats the plotting
-    # area; the hover keeps the full text.
-    ticks = ordered[label].astype(str)
-    shortened = ticks.map(lambda text: text if len(text) <= 34 else text[:33] + "…")
-    if shortened.duplicated().any():
-        # Two bars sharing a category label would be drawn on the same row.
-        collisions = shortened.duplicated(keep=False)
-        shortened = shortened.where(
-            ~collisions, shortened + " " + shortened.groupby(shortened).cumcount().add(1).astype(str)
-        )
+    scaled = raw / divisor
+    top = float(scaled.max())
+    accent = color or theme.series[0]
+    # The leader is the answer, so it takes the signal — unless the caller
+    # already owns the meaning of the colour, as failures own alarm red.
+    lead = highlight or theme.signal
+    colors = [lead if value_ == top else accent for value_ in scaled]
+    suffix = " тыс." if divisor == 1000 else ""
     figure = go.Figure(
         go.Bar(
-            x=ordered[value],
-            y=shortened,
+            x=scaled,
+            y=_short(ordered[label]),
             orientation="h",
-            marker=dict(color=color or theme.series[2]),
+            marker=dict(color=colors),
+            text=[f"{value_:,.0f}{suffix}".replace(",", " ") for value_ in scaled],
+            textposition="outside",
+            textfont=dict(color=theme.muted, family=MONO, size=10),
+            cliponaxis=False,
             # The hover always states the measured value, never the rescaled one.
-            customdata=list(zip(ticks, raw)),
+            customdata=list(zip(ordered[label].astype(str), raw)),
             hovertemplate=f"%{{customdata[0]}}<br>%{{customdata[1]:,.0f}} {unit}<extra></extra>",
         )
     )
-    figure.update_xaxes(title_text=(axis_title or unit).capitalize(), showgrid=True)
-    figure.update_yaxes(title_text="", automargin=True)
-    return _base(figure, theme, height=height or max(260, 24 * len(ordered) + 80))
-
-
-def donut(
-    data: pd.DataFrame,
-    theme: Theme,
-    *,
-    label: str = "key",
-    value: str = "tokens",
-    unit: str = "токенов",
-    height: int = 260,
-) -> go.Figure:
-    """A share of a whole where the parts are named directly on the ring."""
-
-    if _is_empty(data, value):
-        return empty(theme, height=height)
-    total = float(data[value].sum())
-    # Plotly writes «0.0348%»: a Latin decimal point and four digits of noise.
-    # The label is built here so a share below one per cent reads as «<1 %».
-    captions = []
-    for name, amount in zip(data[label], data[value]):
-        share = amount / total * 100
-        share_text = "<1 %" if 0 < share < 1 else f"{share:.1f} %".replace(".", ",")
-        captions.append(f"{name}<br>{share_text}")
-    figure = go.Figure(
-        go.Pie(
-            labels=data[label],
-            values=data[value],
-            hole=0.62,
-            sort=False,
-            marker=dict(colors=list(theme.series), line=dict(color=theme.surface, width=2)),
-            text=captions,
-            textinfo="text",
-            textposition="outside",
-            insidetextorientation="horizontal",
-            hovertemplate=f"%{{label}}<br>%{{value:,.0f}} {unit} (%{{percent}})<extra></extra>",
-        )
+    figure.update_xaxes(visible=False, range=[0, top * 1.2])
+    figure.update_yaxes(
+        title_text="",
+        automargin=True,
+        tickfont=dict(color=theme.text_secondary, family=MONO, size=10),
     )
-    figure.update_traces(textfont=dict(color=theme.text_secondary, size=11))
-    return _base(figure, theme, height=height)
+    return _base(figure, theme, height=height or max(240, 24 * len(ordered) + 54))
 
 
 def stacked_pair(
@@ -250,9 +211,9 @@ def stacked_pair(
     right_label: str,
     right_value: float,
     unit: str = "сообщений",
-    height: int = 150,
+    height: int = 130,
 ) -> go.Figure:
-    """One bar split in two parts — useful vs useless, work vs non-work."""
+    """One bar split in two parts — useful against useless."""
 
     if left_value + right_value <= 0:
         return empty(theme, height=height)
@@ -267,25 +228,25 @@ def stacked_pair(
             name=name,
             orientation="h",
             marker=dict(color=color),
-            text=[f"{name}: {amount:,.0f}".replace(",", " ")],
+            text=[f"{name} {amount:,.0f}".replace(",", " ")],
             textposition="inside",
             insidetextanchor="middle",
-            textfont=dict(color=theme.surface if color != theme.dim else theme.text_primary, size=12),
+            textfont=dict(color=theme.page if color != theme.dim else theme.text_primary,
+                          family=MONO, size=11),
             hovertemplate=f"{name}<br>%{{x:,.0f}} {unit}<extra></extra>",
         )
-    figure.update_layout(barmode="stack", bargap=0.4)
+    figure.update_layout(barmode="stack", bargap=0.5)
     figure.update_xaxes(visible=False)
     figure.update_yaxes(visible=False)
     return _base(figure, theme, height=height)
 
 
-def scenario_scatter(data: pd.DataFrame, theme: Theme, height: int = 420) -> go.Figure:
-    """The automation map: how often a scenario happens vs how ready it is.
+def scenario_scatter(data: pd.DataFrame, theme: Theme, height: int = 400) -> go.Figure:
+    """The automation map: how often a scenario happens against how ready it is.
 
-    Median lines split the plane into four quadrants; the interesting one is
-    upper-right — frequent scenarios that the analysis already marked as
-    automatable. Colour carries the share of simple dialogues, because a
-    frequent, automatable *and* simple scenario is the cheapest thing to build.
+    Median lines cut the plane into quadrants. Only the upper-right one is
+    amber — frequent scenarios the analysis already marked as automatable —
+    because that quadrant is the whole point of the chart.
     """
 
     if data is None or data.empty:
@@ -293,62 +254,53 @@ def scenario_scatter(data: pd.DataFrame, theme: Theme, height: int = 420) -> go.
 
     x_median = float(data["share"].median())
     y_median = float(data["automation_share"].median())
-    highlight = (data["share"] >= x_median) & (data["automation_share"] >= y_median)
-    labels = data["label"].where(highlight, "")
+    actionable = (data["share"] >= x_median) & (data["automation_share"] >= y_median)
 
-    figure = go.Figure(
-        go.Scatter(
-            x=data["share"],
-            y=data["automation_share"],
-            mode="markers+text",
-            text=labels,
-            textposition="top center",
-            textfont=dict(color=theme.text_secondary, size=11),
-            cliponaxis=False,
-            marker=dict(
-                size=22,
-                color=data["simple_share"],
-                colorscale=[[index / (len(theme.sequential) - 1), color]
-                            for index, color in enumerate(theme.sequential)],
-                cmin=0,
-                cmax=100,
-                line=dict(color=theme.surface, width=1.5),
-                colorbar=dict(
-                    title=dict(text="простых, %", font=dict(color=theme.muted, size=10)),
-                    tickfont=dict(color=theme.muted, size=10),
-                    thickness=8,
-                    len=0.7,
-                    outlinewidth=0,
-                ),
-            ),
-            customdata=data[["label", "dialogs", "automation_share", "simple_share", "avg_tokens"]],
-            hovertemplate=(
-                "%{customdata[0]}<br>"
-                "%{customdata[1]} диалогов · %{x:.1f} % выгрузки<br>"
-                "кандидатов на автоматизацию: %{customdata[2]:.0f} %<br>"
-                "простых: %{customdata[3]:.0f} % · в среднем %{customdata[4]:,.0f} токенов"
-                "<extra></extra>"
-            ),
-        )
-    )
+    figure = go.Figure()
     for value, orientation in ((x_median, "v"), (y_median, "h")):
         line = dict(color=theme.guide, width=1, dash="dot")
         if orientation == "v":
             figure.add_vline(x=value, line=line)
         else:
             figure.add_hline(y=value, line=line)
+
+    for mask, color, size in ((~actionable, theme.series[0], 13), (actionable, theme.signal, 19)):
+        subset = data[mask]
+        if subset.empty:
+            continue
+        figure.add_trace(
+            go.Scatter(
+                x=subset["share"],
+                y=subset["automation_share"],
+                mode="markers+text" if color == theme.signal else "markers",
+                text=subset["label"],
+                textposition="middle right",
+                textfont=dict(color=theme.text_primary, family=MONO, size=10.5),
+                cliponaxis=False,
+                marker=dict(color=color, size=size, line=dict(color=theme.surface, width=2)),
+                customdata=subset[["label", "dialogs", "automation_share", "simple_share", "avg_tokens"]],
+                hovertemplate=(
+                    "%{customdata[0]}<br>"
+                    "%{customdata[1]} диалогов · %{x:.1f} % выгрузки<br>"
+                    "кандидатов на автоматизацию: %{customdata[2]:.0f} %<br>"
+                    "простых: %{customdata[3]:.0f} % · в среднем %{customdata[4]:,.0f} токенов"
+                    "<extra></extra>"
+                ),
+            )
+        )
     figure.add_annotation(
-        x=1,
-        y=1.06,
-        xref="paper",
-        yref="paper",
-        xanchor="right",
-        showarrow=False,
-        text="частые и готовые к автоматизации →",
-        font=dict(color=theme.muted, size=10.5),
+        x=1, y=1.07, xref="paper", yref="paper", xanchor="right", showarrow=False,
+        text="ЧАСТЫЕ И ГОТОВЫЕ К АВТОМАТИЗАЦИИ →",
+        font=dict(color=theme.signal, family=MONO, size=9.5),
     )
-    figure.update_xaxes(title_text="Доля диалогов, %", showgrid=True, rangemode="tozero")
-    figure.update_yaxes(title_text="Кандидатов на автоматизацию, %", showgrid=True, rangemode="tozero")
+    # Labels sit to the right of their marks, so the axis keeps room for the
+    # longest of them instead of letting it run off the panel.
+    figure.update_xaxes(
+        title_text="ДОЛЯ ДИАЛОГОВ, %",
+        showgrid=True,
+        range=[0, float(data["share"].max()) * 1.55],
+    )
+    figure.update_yaxes(title_text="КАНДИДАТОВ, %", showgrid=True, rangemode="tozero")
     return _base(figure, theme, height=height)
 
 
@@ -358,14 +310,14 @@ def grouped_bar(
     *,
     left: tuple[str, str],
     right: tuple[str, str],
-    height: int = 280,
+    height: int = 300,
 ) -> go.Figure:
-    """Two series side by side over the same categories."""
+    """Two series over the same categories, named on the marks themselves."""
 
     if data is None or data.empty or (data[left[0]].sum() + data[right[0]].sum()) == 0:
         return empty(theme, height=height)
     figure = go.Figure()
-    for (column, name), color in ((left, theme.series[0]), (right, theme.dim)):
+    for (column, name), color in ((left, theme.signal), (right, theme.dim)):
         figure.add_bar(
             x=data["key"],
             y=data[column],
@@ -373,20 +325,26 @@ def grouped_bar(
             marker=dict(color=color),
             text=data[column],
             textposition="outside",
-            textfont=dict(color=theme.muted, size=11),
+            textfont=dict(color=theme.muted, family=MONO, size=10),
             cliponaxis=False,
             hovertemplate=f"%{{x}} · {name}<br>%{{y:,.0f}} диалогов<extra></extra>",
         )
-    figure.update_layout(barmode="group", showlegend=True, legend=dict(
-        orientation="h", yanchor="top", y=-0.16, xanchor="left", x=0,
-        font=dict(color=theme.text_secondary, size=11), bgcolor="rgba(0,0,0,0)",
-    ))
-    figure.update_xaxes(title_text="", showgrid=False)
-    figure.update_yaxes(title_text="Диалоги", showgrid=True, rangemode="tozero")
+    figure.update_xaxes(title_text="", showgrid=False,
+                        tickfont=dict(color=theme.text_secondary, family=MONO, size=10))
+    figure.update_yaxes(visible=False, rangemode="tozero")
     figure = _base(figure, theme, height=height)
-    # `_base` turns legends off for every other chart on the page, so this one
-    # is switched back on afterwards, together with the room its row needs.
-    figure.update_layout(showlegend=True, margin=dict(l=16, r=16, t=14, b=58))
+    # `_base` turns legends off for every other chart, so this one is switched
+    # back on: two series over the same categories cannot be read without it.
+    figure.update_layout(
+        barmode="group",
+        showlegend=True,
+        legend=dict(
+            orientation="h", yanchor="top", y=-0.08, xanchor="left", x=0,
+            font=dict(color=theme.muted, family=MONO, size=10),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        margin=dict(l=8, r=14, t=18, b=44),
+    )
     return figure
 
 
@@ -405,11 +363,11 @@ def confidence_histogram(values: pd.Series, theme: Theme, threshold: float, heig
     )
     figure.add_vline(
         x=threshold,
-        line=dict(color=theme.guide, width=1, dash="dash"),
-        annotation_text=f"порог {threshold}".replace(".", ","),
+        line=dict(color=theme.signal, width=1, dash="dot"),
+        annotation_text=f"ПОРОГ {threshold}".replace(".", ","),
         annotation_position="top left",
-        annotation_font=dict(color=theme.muted, size=11),
+        annotation_font=dict(color=theme.signal, family=MONO, size=9.5),
     )
-    figure.update_xaxes(title_text="confidence", showgrid=False, range=[0, 1.02])
-    figure.update_yaxes(title_text="Диалоги", showgrid=True)
+    figure.update_xaxes(title_text="CONFIDENCE", showgrid=False, range=[0, 1.02])
+    figure.update_yaxes(title_text="", showgrid=True)
     return _base(figure, theme, height=height)
