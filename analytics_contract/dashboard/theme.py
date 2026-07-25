@@ -29,6 +29,13 @@ class Theme:
     good: str
     warning: str
     critical: str
+    #: Colour for marks that are outside the current selection. Selection is a
+    #: state, not an identity, so it is encoded by de-emphasising everything
+    #: else rather than by giving the chosen mark a new hue.
+    dim: str
+    #: Reference lines (median splits, the 80% Pareto mark). Recessive on
+    #: purpose: they orient the reader without competing with the data.
+    guide: str
 
 
 LIGHT = Theme(
@@ -46,6 +53,8 @@ LIGHT = Theme(
     good="#0ca30c",
     warning="#fab219",
     critical="#d03b3b",
+    dim="#d3d2ca",
+    guide="#b4b3aa",
 )
 
 DARK = Theme(
@@ -63,6 +72,8 @@ DARK = Theme(
     good="#0ca30c",
     warning="#fab219",
     critical="#d03b3b",
+    dim="#3a3a37",
+    guide="#4d4d49",
 )
 
 THEMES = {"light": LIGHT, "dark": DARK}

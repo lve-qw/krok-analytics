@@ -9,13 +9,21 @@ The app refuses to start unless the input passes the canonical contract.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 import pandas as pd
-from dash import ALL, Dash, Input, Output, State, callback_context, dcc, html
+from dash import ALL, Dash, Input, Output, State, callback_context, dcc, html, no_update
 
-from analytics_contract.dashboard import charts, data_loader, filters as filters_module, layout, metrics
+from analytics_contract.dashboard import (
+    charts,
+    data_loader,
+    filters as filters_module,
+    labels,
+    layout,
+    metrics,
+)
 from analytics_contract.dashboard.styles import STYLESHEET
 from analytics_contract.dashboard.theme import get_theme
 from analytics_contract.schema import DRILLDOWN_COLUMNS
@@ -23,19 +31,62 @@ from analytics_contract.schema import DRILLDOWN_COLUMNS
 DEFAULT_INPUT = "outputs/analytics.canonical.csv"
 DEFAULT_CLASSES = "data/classes_31.csv"
 
+#: Charts a click can select from. Each one draws a scenario the user can point
+#: at; the trailing element of every point's customdata is the stored value.
+SELECTABLE_CHARTS = ("chart-volume", "chart-failure", "chart-cost")
+
+HIDDEN = {"display": "none"}
+VISIBLE = {"display": "block"}
+
 
 def _drilldown_records(frame: pd.DataFrame) -> list[dict]:
+    """Table rows, with every stored value passed through the label layer."""
+
     if frame.empty:
         return []
     view = frame[list(DRILLDOWN_COLUMNS)].copy()
-    for column in ("class_names", "integrations", "tools"):
-        view[column] = view[column].map(lambda values: ", ".join(values) if values else "—")
+    view["class_names"] = view["class_names"].map(labels.joined)
+    view["integrations"] = view["integrations"].map(lambda v: labels.joined(v, "integrations"))
+    view["tools"] = view["tools"].map(lambda v: labels.joined(v, "tools"))
+    view["use_case"] = view["use_case"].map(labels.use_case)
+    view["complexity"] = view["complexity"].map(lambda v: labels.show(v, "complexity"))
+    view["failure_reason"] = view["failure_reason"].map(
+        lambda v: labels.show(v, "failure_reason") if str(v).strip() else "—"
+    )
     view["confidence"] = view["confidence"].map(lambda value: f"{value:.2f}")
     view["estimated_cost"] = view["estimated_cost"].map(lambda value: f"{value:.5f}")
     for column in ("automation_candidate", "agent_failed"):
         view[column] = view[column].map({True: "да", False: "нет"})
-    view["failure_reason"] = view["failure_reason"].replace("", "—")
     return view.to_dict("records")
+
+
+def _clicked_value(click_data) -> str | None:
+    """The stored value behind a clicked mark, or None."""
+
+    if not click_data:
+        return None
+    points = click_data.get("points") or []
+    if not points:
+        return None
+    custom = points[0].get("customdata")
+    if isinstance(custom, (list, tuple)) and custom:
+        return str(custom[-1])
+    return None
+
+
+def _load_counts(analytics_path: str) -> dict | None:
+    """Row counts from the adapter's report, if it sits next to the input."""
+
+    report = Path(analytics_path).parent / "export_report.json"
+    if not report.exists():
+        return None
+    try:
+        counts = json.loads(report.read_text(encoding="utf-8")).get("counts")
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not counts or not {"input_rows", "exported_rows", "error_rows"} <= set(counts):
+        return None
+    return counts
 
 
 def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0.5) -> Dash:
@@ -51,7 +102,11 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
 </html>"""
 
     app.layout = layout.build(
-        frame, metrics.kpis(frame, low_confidence), dataset.limitations, theme
+        frame,
+        metrics.kpis(frame, low_confidence),
+        dataset.limitations,
+        theme,
+        _load_counts(analytics_path),
     )
 
     filter_inputs = Input({"type": "filter", "key": ALL}, "value")
@@ -75,11 +130,20 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
         Input("volume-dimension", "value"),
         Input("reliability-dimension", "value"),
         Input("theme-store", "data"),
+        Input("selection-store", "data"),
         filter_states,
     )
-    def refresh(values, volume_dimension, reliability_dimension, theme_name, ids):
+    def refresh(values, volume_dimension, reliability_dimension, theme_name, selection, ids):
         active = get_theme(theme_name)
         filtered = filters_module.apply(frame, _selections(values, ids))
+        records = filters_module.apply_selection(filtered, selection)
+
+        # The highlight only applies to the chart whose axis the value lives
+        # on: a selected class must not dim the scenario bars.
+        chosen = (selection or {}).get("value")
+        chosen_column = (selection or {}).get("column")
+        volume_selected = chosen if chosen_column == volume_dimension else None
+        scenario_selected = chosen if chosen_column == "use_case" else None
 
         volume_data = (
             metrics.top_use_cases(filtered)
@@ -88,28 +152,112 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
         )
         overlap = metrics.exposure_overlap(filtered)
 
-        count_text = (
-            f"Показано {len(filtered)} из {len(frame)} диалогов. "
-            f"Пересечение чувствительных данных, корпоративных источников и "
-            f"внешнего поиска: {overlap} записей — каждая требует ручного разбора."
-        )
+        count = [
+            f"Показано {len(filtered)} из {len(frame)} диалогов. ",
+            f"Совпадение чувствительных данных, корпоративных источников и внешнего "
+            f"поиска в одном диалоге: {overlap} — каждая такая запись требует "
+            f"ручного разбора.",
+        ]
+        if len(records) != len(filtered):
+            count.insert(1, f"В таблице «Записи» — {len(records)} по выбору на диаграмме. ")
 
         return (
             layout.kpi_row(metrics.kpis(filtered, low_confidence)),
-            count_text,
-            charts.volume_bar(volume_data, active),
+            count,
+            charts.volume_bar(volume_data, active, volume_selected, len(filtered)),
             charts.periodicity_heatmap(metrics.use_case_periodicity(filtered), active),
-            charts.failure_scatter(metrics.failure_by_use_case(filtered), active),
+            charts.failure_scatter(metrics.failure_by_use_case(filtered), active, scenario_selected),
             charts.reliability_bar(
                 metrics.reliability(filtered, reliability_dimension),
                 active,
                 reliability_dimension,
             ),
-            charts.cost_pareto(metrics.cost_pareto(filtered), active),
+            charts.cost_pareto(metrics.cost_pareto(filtered), active, scenario_selected),
             charts.token_split_bar(metrics.token_split(filtered), active),
             charts.security_heatmap(metrics.security_matrix(filtered), active),
-            _drilldown_records(filtered),
+            _drilldown_records(records),
         )
+
+    @app.callback(
+        Output("selection-store", "data"),
+        Input("chart-volume", "clickData"),
+        Input("chart-failure", "clickData"),
+        Input("chart-cost", "clickData"),
+        Input("clear-selection", "n_clicks"),
+        Input("reset-filters", "n_clicks"),
+        State("volume-dimension", "value"),
+        State("selection-store", "data"),
+        prevent_initial_call=True,
+    )
+    def select(volume_click, failure_click, cost_click, _clear, _reset, dimension, current):
+        trigger = callback_context.triggered_id
+        if trigger in ("clear-selection", "reset-filters"):
+            return None
+        if trigger not in SELECTABLE_CHARTS:
+            return no_update
+
+        clicks = {
+            "chart-volume": volume_click,
+            "chart-failure": failure_click,
+            "chart-cost": cost_click,
+        }
+        value = _clicked_value(clicks[trigger])
+        if value is None:
+            return no_update
+
+        column = dimension if trigger == "chart-volume" else "use_case"
+        chosen = {"column": column, "value": value}
+        # Clicking the selected mark again clears it, so the chart itself is
+        # always a way out of the state it put you in.
+        return None if current == chosen else chosen
+
+    @app.callback(
+        Output("filter-chips", "children"),
+        Output("clear-selection", "children"),
+        Output("clear-selection", "style"),
+        filter_inputs,
+        Input("selection-store", "data"),
+        filter_states,
+    )
+    def chips(values, selection, ids):
+        """Everything currently narrowing the data, shown as removable state.
+
+        A filter nobody can see is a filter everybody forgets, and a forgotten
+        filter is how a wrong number ends up on a slide.
+        """
+
+        active = filters_module.active(_selections(values, ids))
+        children = [
+            html.Span([f"{spec.label}: ", html.B(text)], className="chip")
+            for spec, text in active
+        ]
+        if not active and not selection:
+            children.append(
+                html.Span("Фильтры не заданы — показаны все записи", className="chip-none")
+            )
+
+        if not selection:
+            return children, None, HIDDEN
+
+        label = labels.show(selection["value"], selection["column"])
+        return (
+            children,
+            [
+                html.Span(["Выбрано на диаграмме: ", html.B(label)]),
+                html.Span("✕", className="chip-x"),
+            ],
+            {"display": "inline-flex"},
+        )
+
+    @app.callback(
+        Output("panel-overview", "style"),
+        Output("panel-scenarios", "style"),
+        Output("panel-reliability", "style"),
+        Output("panel-records", "style"),
+        Input("tabs", "value"),
+    )
+    def switch_tab(value):
+        return tuple(VISIBLE if key == value else HIDDEN for key, _ in layout.TABS)
 
     @app.callback(
         Output({"type": "filter", "key": ALL}, "value"),
@@ -131,11 +279,14 @@ def create_app(analytics_path: str, classes_path: str, low_confidence: float = 0
         Input("export-button", "n_clicks"),
         filter_states,
         State({"type": "filter", "key": ALL}, "value"),
+        State("selection-store", "data"),
         prevent_initial_call=True,
     )
-    def export(_clicks, ids, values):
+    def export(_clicks, ids, values, selection):
         filtered = filters_module.apply(frame, _selections(values, ids))
-        export_frame = filtered.copy()
+        export_frame = filters_module.apply_selection(filtered, selection).copy()
+        # Stored values, not captions: the export has to load back into the
+        # same contract it came from.
         for column in ("class_ids", "class_names", "integrations", "tools",
                        "company_sources", "requires_generation", "search_type"):
             export_frame[column] = export_frame[column].map(lambda values: "; ".join(values))

@@ -9,10 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
 
-from analytics_contract.dashboard import charts, data_loader, filters, layout, metrics
+from analytics_contract.dashboard import charts, data_loader, filters, labels, layout, metrics
 from analytics_contract.dashboard.app import create_app
-from analytics_contract.dashboard.theme import DARK, LIGHT
-from analytics_contract.schema import REQUIRED_COLUMNS
+from analytics_contract.dashboard.styles import STYLESHEET
+from analytics_contract.dashboard.theme import DARK, LIGHT, THEMES
+from analytics_contract.schema import DRILLDOWN_COLUMNS, REQUIRED_COLUMNS
 
 CLASSES = [
     ("email_summary", "Сводка по письмам", "длинное описание 1"),
@@ -105,6 +106,24 @@ class MetricsTest(DashboardTestCase):
 
         self.assertEqual(len(cards), 7)
         self.assertTrue(all(card.value for card in cards))
+
+    def test_every_kpi_carries_a_formula_for_its_tooltip(self):
+        for card in metrics.kpis(self.frame, 0.5):
+            with self.subTest(card=card.label):
+                self.assertTrue(card.formula, "a number on a projector must state its source")
+                self.assertIn(card.formula, card.tooltip)
+
+    def test_cost_is_labelled_with_its_unit(self):
+        cost = next(c for c in metrics.kpis(self.frame, 0.5) if "Стоимость" in c.label)
+
+        self.assertEqual(cost.unit, metrics.COST_UNIT)
+        self.assertIn(metrics.COST_RATE_NOTE, cost.formula)
+        self.assertIn("не стоимость владения", cost.caveat)
+
+    def test_failure_kpi_does_not_claim_success(self):
+        failure = next(c for c in metrics.kpis(self.frame, 0.5) if "сбоев" in c.label)
+
+        self.assertIn("не означает успешно выполненную задачу", failure.caveat)
 
     def test_kpis_on_empty_frame_do_not_crash(self):
         cards = metrics.kpis(self.frame.iloc[0:0], 0.5)
@@ -264,11 +283,210 @@ class ChartTest(DashboardTestCase):
         self.assertEqual({trace.yaxis for trace in figure.data}, {None})
 
 
+class LabelTest(DashboardTestCase):
+    def test_unclustered_is_named_not_hidden(self):
+        # The clustering step's noise bucket is a real value; it gets a caption
+        # rather than being dropped or shown as a raw identifier.
+        self.assertEqual(labels.use_case("unclustered"), "Сценарий не определён")
+
+    def test_unknown_values_pass_through(self):
+        self.assertEqual(labels.show("совершенно новый", "use_case"), "совершенно новый")
+        self.assertEqual(labels.show("mail", None), "mail")
+
+    def test_every_stored_enum_has_a_russian_caption(self):
+        for column, values in (
+            ("complexity", ["simple", "medium", "complex"]),
+            ("periodicity", ["none", "daily", "weekly", "monthly"]),
+            ("search_type", ["internet", "internal"]),
+        ):
+            for value in values:
+                with self.subTest(column=column, value=value):
+                    self.assertNotEqual(labels.show(value, column), value)
+
+    def test_truncation_keeps_the_full_name_available(self):
+        long = "Подготовка отчётности по CRM за прошлый квартал"
+        short = labels.truncate(long, 20)
+
+        self.assertEqual(len(short), 20)
+        self.assertTrue(short.endswith("…"))
+        self.assertEqual(labels.show(long, "use_case"), long)
+
+    def test_validator_limitations_are_translated(self):
+        for text in self.dataset.limitations:
+            with self.subTest(text=text[:40]):
+                self.assertNotEqual(labels.limitation(text), text)
+
+
+class TableTest(DashboardTestCase):
+    def setUp(self):
+        super().setUp()
+        from analytics_contract.dashboard.app import _drilldown_records
+
+        self.records = _drilldown_records(self.frame)
+
+    def test_every_contract_column_has_a_header_and_a_width(self):
+        for column in DRILLDOWN_COLUMNS:
+            with self.subTest(column=column):
+                self.assertIn(column, layout.DRILLDOWN_LABELS)
+                self.assertIn(column, layout.DRILLDOWN_WIDTHS)
+
+    def test_columns_fit_a_1440_viewport(self):
+        # Wider than this and the last column is cut off on the demo laptop.
+        self.assertLessEqual(sum(layout.DRILLDOWN_WIDTHS.values()), 1345)
+
+    def test_lists_and_booleans_are_rendered_as_text(self):
+        row = self.records[0]
+
+        self.assertEqual(row["tools"], "Почта")
+        self.assertEqual(row["agent_failed"], "нет")
+        self.assertEqual(row["complexity"], "средний")
+
+    def test_empty_list_shows_a_dash_not_an_empty_cell(self):
+        frame = self.frame.copy()
+        frame.at[0, "integrations"] = []
+        from analytics_contract.dashboard.app import _drilldown_records
+
+        self.assertEqual(_drilldown_records(frame)[0]["integrations"], "—")
+
+    def test_table_is_styled_from_theme_variables(self):
+        table = _find(layout.drilldown_table(), "drilldown")
+
+        self.assertTrue(table.style_header["backgroundColor"].startswith("var(--"))
+        self.assertTrue(table.style_data["backgroundColor"].startswith("var(--"))
+        self.assertTrue(table.style_data["color"].startswith("var(--"))
+        self.assertEqual(table.fixed_rows, {"headers": True})
+        self.assertEqual(table.sort_action, "native")
+
+    def test_wrapping_is_enabled_for_long_text(self):
+        table = _find(layout.drilldown_table(), "drilldown")
+
+        self.assertEqual(table.style_cell["whiteSpace"], "normal")
+        self.assertEqual(table.style_cell["height"], "auto")
+
+
+class ThemeTest(DashboardTestCase):
+    def test_theme_class_is_always_explicit(self):
+        # The bug this guards: with the class left off, an OS-level dark
+        # preference styled the page while the store still said light, so
+        # Plotly kept drawing on white paper inside a dark card.
+        page = layout.build(self.frame, metrics.kpis(self.frame, 0.5), [], LIGHT)
+
+        self.assertIn("theme-light", page.className)
+
+    def test_stylesheet_declares_no_os_level_theme_rule(self):
+        self.assertNotIn("prefers-color-scheme", STYLESHEET)
+
+    def test_both_themes_define_every_token(self):
+        for name, theme in THEMES.items():
+            with self.subTest(theme=name):
+                for field in ("surface", "page", "dim", "guide", "grid", "axis"):
+                    self.assertTrue(getattr(theme, field).startswith("#"))
+
+
+class SelectionTest(DashboardTestCase):
+    def test_selection_narrows_to_one_scenario(self):
+        result = filters.apply_selection(
+            self.frame, {"column": "use_case", "value": "Задачи в Jira"}
+        )
+
+        self.assertTrue((result["use_case"] == "Задачи в Jira").all())
+        self.assertLess(len(result), len(self.frame))
+
+    def test_selection_on_a_list_column_matches_membership(self):
+        result = filters.apply_selection(
+            self.frame, {"column": "class_names", "value": "Сводка по письмам"}
+        )
+
+        self.assertEqual(len(result), len(self.frame))
+
+    def test_unknown_or_missing_selection_is_a_no_op(self):
+        for selection in (None, {}, {"column": "summary", "value": "x"}):
+            with self.subTest(selection=selection):
+                self.assertEqual(
+                    len(filters.apply_selection(self.frame, selection)), len(self.frame)
+                )
+
+    def test_clicked_value_is_the_stored_key_not_the_caption(self):
+        from analytics_contract.dashboard.app import _clicked_value
+
+        figure = charts.volume_bar(metrics.top_use_cases(self.frame), LIGHT)
+        custom = figure.data[0].customdata
+
+        self.assertEqual(_clicked_value({"points": [{"customdata": custom[0]}]}), custom[0][-1])
+        self.assertIn(custom[0][-1], set(self.frame["use_case"]))
+
+    def test_no_click_yields_no_selection(self):
+        from analytics_contract.dashboard.app import _clicked_value
+
+        self.assertIsNone(_clicked_value(None))
+        self.assertIsNone(_clicked_value({"points": []}))
+
+    def test_selected_mark_keeps_its_hue_and_the_rest_are_dimmed(self):
+        data = metrics.top_use_cases(self.frame)
+        chosen = data["use_case"].iloc[0]
+        figure = charts.volume_bar(data, LIGHT, chosen)
+        colours = list(figure.data[0].marker.color)
+
+        self.assertEqual(colours.count(LIGHT.series[0]), 1)
+        self.assertEqual(colours.count(LIGHT.dim), len(colours) - 1)
+
+
+class ChipTest(DashboardTestCase):
+    def test_no_selection_produces_no_chips(self):
+        self.assertEqual(filters.active({}), [])
+        self.assertEqual(filters.active({"agent_failed": filters.ANY}), [])
+
+    def test_chip_text_uses_captions_not_stored_values(self):
+        by_key = {
+            spec.key: text
+            for spec, text in filters.active(
+                {"complexity": ["simple"], "agent_failed": "true"}
+            )
+        }
+
+        self.assertEqual(by_key["complexity"], "простой")
+        self.assertEqual(by_key["agent_failed"], "да")
+
+    def test_primary_and_secondary_filters_partition_the_set(self):
+        self.assertEqual(
+            set(filters.PRIMARY) | set(filters.SECONDARY), set(filters.FILTERS)
+        )
+        self.assertEqual(set(filters.PRIMARY) & set(filters.SECONDARY), set())
+        self.assertTrue(0 < len(filters.PRIMARY) < len(filters.FILTERS))
+
+
+def _find(component, target_id):
+    if getattr(component, "id", None) == target_id:
+        return component
+    for child in (getattr(component, "children", None) or []):
+        if hasattr(child, "children") or hasattr(child, "id"):
+            found = _find(child, target_id)
+            if found is not None:
+                return found
+    return None
+
+
 class AppTest(DashboardTestCase):
     def test_app_builds_with_expected_callbacks(self):
         app = create_app(str(self.analytics_path), str(self.classes_path))
 
-        self.assertEqual(len(app.callback_map), 4)
+        self.assertEqual(len(app.callback_map), 7)
+
+    def test_every_panel_is_in_the_initial_layout(self):
+        # Panels are hidden with CSS rather than built on demand, so a chart on
+        # an unopened tab still has an id for its callback to write to.
+        app = create_app(str(self.analytics_path), str(self.classes_path))
+
+        for key, _ in layout.TABS:
+            with self.subTest(panel=key):
+                self.assertIsNotNone(_find(app.layout, f"panel-{key}"))
+
+    def test_clear_selection_button_exists_before_anything_is_selected(self):
+        app = create_app(str(self.analytics_path), str(self.classes_path))
+        button = _find(app.layout, "clear-selection")
+
+        self.assertIsNotNone(button)
+        self.assertEqual(button.style, {"display": "none"})
 
     def test_layout_defines_every_id_the_callbacks_output(self):
         app = create_app(str(self.analytics_path), str(self.classes_path))

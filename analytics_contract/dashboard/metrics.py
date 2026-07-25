@@ -21,13 +21,37 @@ import pandas as pd
 #: 100% and carries no information.
 DEFAULT_MIN_GROUP = 5
 
+#: `estimated_cost` is produced in `token_counter.py` as tokens/1000 * 0.0001.
+#: The pipeline never names a currency, so the dashboard does not name one
+#: either — it labels the figure as conventional units and states the rate.
+COST_UNIT = "у.е."
+COST_RATE_NOTE = "0,0001 у.е. за 1000 токенов (token_counter.py)"
+
 
 @dataclass(frozen=True)
 class Kpi:
+    """One first-screen card.
+
+    `formula` and `caveat` exist because a number shown to a jury has to be
+    able to answer "where is that from?" without anyone speaking. They are
+    rendered in the card's tooltip, which keeps the face of the card down to a
+    label, a figure and one line of context.
+    """
+
     label: str
     value: str
     detail: str
     note: str = ""
+    unit: str = ""
+    formula: str = ""
+
+    @property
+    def tooltip(self) -> str:
+        return "\n\n".join(part for part in (self.formula, self.caveat) if part)
+
+    @property
+    def caveat(self) -> str:
+        return self.note
 
 
 def _share(numerator: int, denominator: int) -> float:
@@ -96,41 +120,64 @@ def kpis(frame: pd.DataFrame, low_confidence: float, top_n: int = 5) -> list[Kpi
     injection = int(frame["prompt_injection"].sum())
 
     return [
-        Kpi("Проанализировано диалогов", f"{total}", f"рабочих — {_pct(_share(work, total))}"),
         Kpi(
-            "Зафиксировано сбоев",
-            _pct(_share(failed, total)),
-            f"{failed} из {total} диалогов",
-            "«Сбой не зафиксирован» не означает успешно выполненную задачу",
+            label="Проанализировано диалогов",
+            value=f"{total}",
+            detail=f"рабочих — {_pct(_share(work, total))}",
+            formula="Число строк после фильтров. Доля рабочих = Σ is_work ÷ число строк.",
+            note="Строки, отброшенные из-за сбоя аналитического pipeline, сюда не "
+                 "входят: они лежат в outputs/pipeline_errors.csv.",
         ),
         Kpi(
-            "Кандидаты на автоматизацию",
-            _pct(_share(automation, total)),
-            f"{automation} диалогов",
-            "Признак-гипотеза, а не подтверждённая возможность",
+            label="Зафиксировано сбоев",
+            value=_pct(_share(failed, total)),
+            detail=f"{failed} из {total}",
+            formula="Σ agent_failed ÷ число диалогов.",
+            note="«Сбой не зафиксирован» не означает успешно выполненную задачу: "
+                 "контракт фиксирует только явный отказ агента.",
         ),
         Kpi(
-            "Стоимость обработки",
-            f"{cost_total:.4f}",
-            f"медиана диалога — {cost_median:.5f}",
-            "Только LLM/API. Инфраструктура и лицензии не входят",
+            label="Кандидаты на автоматизацию",
+            value=_pct(_share(automation, total)),
+            detail=f"{automation} диалогов",
+            formula="Σ automation_candidate ÷ число диалогов.",
+            note="Признак поставлен LLM при разборе диалога. Это гипотеза для "
+                 "проверки, а не подтверждённая возможность автоматизации.",
         ),
         Kpi(
-            f"Концентрация расходов, топ-{top_n}",
-            _pct(concentration),
-            f"из {len(by_use_case)} сценариев",
+            label="Стоимость обработки",
+            value=f"{cost_total:.4f}",
+            unit=COST_UNIT,
+            detail=f"медиана диалога — {cost_median:.5f} {COST_UNIT}",
+            formula=f"Σ estimated_cost. Тариф — {COST_RATE_NOTE}.",
+            note="Только LLM/API-обработка. Инфраструктура, GPU и лицензии в "
+                 "контракт не входят, поэтому это не стоимость владения системой. "
+                 "Валюта в pipeline не объявлена, поэтому единицы условные.",
         ),
         Kpi(
-            "Требуют ручного разбора",
-            _pct(_share(review, total)),
-            f"{review} записей",
-            "Низкая уверенность ИЛИ сбой ИЛИ чувствительные данные ИЛИ injection",
+            label=f"Концентрация расходов, топ-{top_n}",
+            value=_pct(concentration),
+            detail=f"из {len(by_use_case)} сценариев",
+            formula=f"Стоимость {top_n} самых дорогих сценариев ÷ общая стоимость.",
+            note="Показывает, на скольких сценариях сосредоточены расходы, — "
+                 "точка приложения усилий по оптимизации.",
         ),
         Kpi(
-            "Индикаторы риска данных",
-            f"{_pct(_share(sensitive, total))} / {_pct(_share(injection, total))}",
-            "чувствительные данные / prompt injection",
-            "Фиксируется обнаружение, а не успешность атаки",
+            label="Требуют ручного разбора",
+            value=_pct(_share(review, total)),
+            detail=f"{review} записей",
+            formula="Объединение по ИЛИ: confidence ниже порога, либо agent_failed, "
+                    "либо contains_sensitive_data, либо prompt_injection.",
+            note="Фильтр внимания, а не оценка риска: сигналы не взвешены между "
+                 "собой и один диалог может попасть сюда по нескольким причинам.",
+        ),
+        Kpi(
+            label="Индикаторы риска данных",
+            value=f"{_pct(_share(sensitive, total))} / {_pct(_share(injection, total))}",
+            detail="чувствительные данные / prompt injection",
+            formula="Σ contains_sensitive_data ÷ N и Σ prompt_injection ÷ N.",
+            note="Фиксируется обнаружение признака, а не успешность атаки и не "
+                 "факт утечки.",
         ),
     ]
 
