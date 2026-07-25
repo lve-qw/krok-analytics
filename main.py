@@ -8,6 +8,7 @@ from llm import LLMAnalyzer
 from zero_shot_classifier import ZeroShotClassifier
 from embeddings import TextEmbedder
 from clustering import DialogClusterer
+from message_classifier import MessageClassifier
 from utils import (
     save_dialogs_csv, 
     save_use_cases_csv, 
@@ -127,6 +128,23 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None, skip_llm: b
         )
         analyses.append(analysis)
     
+    # [4.5/6] Классификация сообщений агента (полезное/бесполезное)
+    if not skip_llm:
+        print("\n[4.5/6] Классификация сообщений агента (LLM)...")
+        msg_classifier = MessageClassifier(
+            model=llm_analyzer.model,
+            tokenizer=llm_analyzer.tokenizer,
+            device=llm_analyzer.device
+        )
+        
+        for analysis in tqdm(analyses, desc="Классификация сообщений"):
+            # Находим оригинальный диалог
+            dialog = next((d for d in dialogs if d.id == analysis.request_id), None)
+            if dialog:
+                msg_result = msg_classifier.classify_dialog(dialog)
+                analysis.message_classification = msg_result
+                analysis.burned_tokens = msg_result.burned_tokens
+    
     dialogs_csv_path = outputs_dir / "dialogs.csv"
     save_dialogs_csv(analyses, dialogs_csv_path)
     
@@ -164,6 +182,9 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None, skip_llm: b
     if not skip_llm:
         print(f"  - Рабочих запросов: {sum(1 for a in analyses if a.metadata.is_work)}")
         print(f"  - Кандидатов на автоматизацию: {sum(1 for a in analyses if a.metadata.automation_candidate)}")
+        total_burned = sum(a.burned_tokens for a in analyses)
+        print(f"  - Сожжено токенов (burned): {total_burned}")
+        print(f"  - Диалогов с бесполезными сообщениями: {sum(1 for a in analyses if a.burned_tokens > 0)}")
     else:
         print(f"  - LLM анализ пропущен (режим быстрой кластеризации)")
     

@@ -114,3 +114,34 @@ class UseCase(BaseModel):
     cluster_id: int
     use_case: str
     member_count: int
+
+
+class MessageClassification(BaseModel):
+    message_index: int
+    role: str
+    is_useful: bool
+    reason: str
+
+
+class MessageClassificationResult(BaseModel):
+    messages: List[MessageClassification] = Field(default_factory=list)
+    burned_tokens: int = 0
+    total_messages: int = 0
+    useful_count: int = 0
+    useless_count: int = 0
+
+
+class DialogAnalysis(BaseModel):
+    request_id: int
+    dialog_id: int
+    user_id: str = ""
+    created_at: str = ""
+    first_user_message: str
+    metadata: DialogMetadata
+    classification: ClassificationResult
+    token_counts: TokenCounts
+    message_classification: Optional[MessageClassificationResult] = None
+    burned_tokens: int = 0
+    class_labels: List[str] = Field(default_factory=list)
+    analysis_status: str = "success"  # "success" | "parse_error" | "skipped"
+    metadata_confidence: float = 1.0
