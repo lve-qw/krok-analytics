@@ -16,7 +16,7 @@ class Dialog(BaseModel):
     user_id: str = ""
     session_id: str = ""
     created_at: str
-    scenario: str = Field(..., validation_alias="scenario_type")
+    scenario: Optional[str] = Field(default="unknown", validation_alias="scenario_type")
     messages: List[Message]
     
     @property
@@ -29,15 +29,15 @@ class Dialog(BaseModel):
     
     @property
     def scenario_id(self) -> str:
-        return self.scenario.replace(" ", "_").lower()[:50]
+        return (self.scenario or "unknown").replace(" ", "_").lower()[:50]
     
     @property
     def scenario_title(self) -> str:
-        return self.scenario
+        return self.scenario or "unknown"
     
     @property
     def scenario_description(self) -> str:
-        return self.scenario
+        return self.scenario or "unknown"
     
     @property
     def total_tokens(self) -> int:
