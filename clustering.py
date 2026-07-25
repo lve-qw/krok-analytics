@@ -65,8 +65,11 @@ class DialogClusterer:
         
         return [messages[cluster_indices[i]] for i in top_indices]
 
-    def name_cluster(self, messages: List[str]) -> str:
-        if self.llm is None:
+    def name_cluster(self, messages: List[str], is_noise: bool = False) -> str:
+        if is_noise:
+            return "Нераспределённые сценарии"
+        
+        if self.llm is None or len(messages) == 0:
             return self._heuristic_name(messages)
         
         messages_text = "\n".join(f"- {m}" for m in messages[:20])
@@ -75,32 +78,34 @@ class DialogClusterer:
         try:
             import json
             import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
             
             inputs = self.llm.tokenizer(prompt, return_tensors="pt").to(self.llm.device)
             
             with torch.no_grad():
                 outputs = self.llm.model.generate(
                     **inputs,
-                    max_new_tokens=100,
+                    max_new_tokens=60,
                     temperature=0.1,
                     do_sample=True,
                     pad_token_id=self.llm.tokenizer.eos_token_id
                 )
             
-            generated = self.llm.tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+            generated = self.llm.tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True).strip()
             
-            try:
-                generated = generated.strip()
-                if generated.startswith("```"):
-                    generated = generated.split("```")[1]
-                    if generated.startswith("json"):
-                        generated = generated[3:]
-                data = json.loads(generated.strip())
-                if "use_case" in data:
-                    return data["use_case"]
-            except:
-                pass
+            # Пробуем распарсить JSON
+            for line in generated.split("\n"):
+                line = line.strip()
+                if line.startswith("{") or line.startswith("```"):
+                    if line.startswith("```"):
+                        line = line.split("```")[1].strip()
+                        if line.startswith("json"):
+                            line = line[3:].strip()
+                    try:
+                        data = json.loads(line.rstrip("}"))
+                        if "use_case" in data:
+                            return data["use_case"]
+                    except:
+                        continue
             
             return self._heuristic_name(messages)
         except Exception as e:
@@ -109,25 +114,32 @@ class DialogClusterer:
 
     def _heuristic_name(self, messages: List[str]) -> str:
         if not messages:
-            return "Другое"
+            return "Нераспределённые"
         
-        sample = messages[0][:100]
+        # Анализируем все сообщения кластера, а не только первое
+        all_text = " ".join(messages[:10]).lower()
         
         keywords = {
-            "Письма и email": ["письмо", "email", "почта", "отправить"],
-            "Задачи и проекты": ["задача", "тикет", "jira", "проект"],
-            "Календарь и встречи": ["встреча", "календарь", "напоминание", "планировать"],
-            "Отчеты и аналитика": ["отчет", "анализ", "данные", "crm"],
-            "Документы": ["документ", "excel", "файл", "создать"],
-            "Поиск информации": ["найти", "поиск", "информация", "узнать"],
-            "Код и разработка": ["код", "python", "ошибка", "разработка"],
+            "Сводка по почте": ["почт", "письм", "email", "сводк", "ответит"],
+            "Задачи и Jira": ["задач", "jira", "тикет", "data-", "bug-", "task-"],
+            "Встречи и календарь": ["встреч", "календар", "напомин", "планиров", "слот"],
+            "CRM и клиенты": ["crm", "клиент", "компан", "сделк", "тендер", "директор"],
+            "Отчёты и аналитика": ["отчет", "анализ", "данные", "статистик", "метри"],
+            "Документы и Confluence": ["документ", "confluence", "страниц", "wiki", "файл"],
+            "Поиск информации": ["найти", "поиск", "информаци", "узнать", "провер"],
+            "Код и разработка": ["код", "python", "ошибк", "разработк", "test", "api"],
+            "Автоматизация": ["автоматиз", "мониторинг", "уведомлен", "триггер"],
+            "Команда и проекты": ["команд", "проект", "участник", "роль", "вендор"],
         }
         
+        scores = {}
         for name, kws in keywords.items():
-            if any(kw in sample.lower() for kw in kws):
-                return name
+            scores[name] = sum(1 for kw in kws if kw in all_text)
         
-        return "Общий сценарий"
+        if max(scores.values()) > 0:
+            return max(scores.items(), key=lambda x: x[1])[0]
+        
+        return "Другое"
 
     def process_clusters(
         self, 
@@ -139,8 +151,9 @@ class DialogClusterer:
         use_cases = []
         
         for cluster_id, indices in clusters.items():
+            is_noise = cluster_id == -1
             rep_messages = self.get_representative_messages(indices, embeddings, messages)
-            use_case_name = self.name_cluster(rep_messages)
+            use_case_name = self.name_cluster(rep_messages, is_noise=is_noise)
             
             for idx in indices:
                 use_cases.append(UseCase(
