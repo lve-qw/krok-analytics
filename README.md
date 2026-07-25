@@ -10,12 +10,20 @@
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dashboard.txt
-./run_dashboard.sh --demo
+./run_dashboard.sh
 ```
 
-После запуска откройте <http://127.0.0.1:8050>.
+Последняя команда берёт готовый демонстрационный набор проекта, собирает из него
+канонический `outputs/analytics.canonical.csv`, проверяет данные и поднимает
+готовый сайт со всеми дашбордами. После запуска откройте
+<http://127.0.0.1:8050>.
 
-Для своей выгрузки создайте отдельную папку и положите в неё два файла:
+Ничего дополнительно копировать в проект для этого запуска не нужно.
+
+## Запуск на другой выгрузке
+
+Только если нужно заменить готовые данные своими, создайте отдельную папку и
+положите в неё два файла:
 
 ```text
 data/imports/current/
@@ -29,11 +37,11 @@ data/imports/current/
 ./run_dashboard.sh data/imports/current
 ```
 
-Подробности о формате и правилах хранения входных файлов находятся в
-[`data/imports/README.md`](data/imports/README.md). Другой порт можно задать так:
+Подробности о формате находятся в
+[`data/imports/README.md`](data/imports/README.md). Другой порт:
 
 ```bash
-PORT=8060 ./run_dashboard.sh data/imports/current
+PORT=8060 ./run_dashboard.sh
 ```
 
 Скрипт последовательно запускает адаптер, валидатор и локальный сервер. Если
@@ -168,7 +176,7 @@ legacy-выход не трогает. Нормализует `tools` и `integr
 цепочки без GPU:
 
 ```bash
-./run_dashboard.sh --demo
+./run_dashboard.sh
 ```
 
 Генератор создаёт `outputs/dialogs.csv` и `use_cases.csv` в формате pipeline.

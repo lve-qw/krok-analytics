@@ -12,10 +12,10 @@ OUTPUT="outputs/analytics.canonical.csv"
 
 usage() {
     echo "Использование:"
-    echo "  ./run_dashboard.sh data/imports/<набор>"
-    echo "  ./run_dashboard.sh --demo"
+    echo "  ./run_dashboard.sh                         # готовые данные проекта"
+    echo "  ./run_dashboard.sh data/imports/<набор>    # другая выгрузка"
     echo
-    echo "Другой порт: PORT=8060 ./run_dashboard.sh --demo"
+    echo "Другой порт: PORT=8060 ./run_dashboard.sh"
 }
 
 if [[ ! -x "$PYTHON" ]]; then
@@ -24,14 +24,11 @@ if [[ ! -x "$PYTHON" ]]; then
     exit 2
 fi
 
-if [[ "${1:-}" == "--demo" ]]; then
+if [[ -z "${1:-}" || "${1:-}" == "--demo" ]]; then
     "$PYTHON" scripts/make_sample_pipeline_output.py
     SOURCE_DIR="outputs"
-elif [[ -n "${1:-}" ]]; then
-    SOURCE_DIR="${1%/}"
 else
-    usage
-    exit 2
+    SOURCE_DIR="${1%/}"
 fi
 
 DIALOGS="$SOURCE_DIR/dialogs.csv"
