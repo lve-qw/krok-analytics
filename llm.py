@@ -100,8 +100,33 @@ class LLMAnalyzer:
             # Извлекаем подстроку начиная с '{'
             json_str = response[start_idx:]
             
-            # Пытаемся найти закрывающую скобку или обрезать по последнему корректному символу
-            end_idx = json_str.rfind('}')
+            # Если модель вернула несколько JSON, берём только первый
+            # Ищем первую закрывающую скобку на одном уровне вложенности
+            depth = 0
+            end_idx = -1
+            in_string = False
+            escape_next = False
+            
+            for i, char in enumerate(json_str):
+                if escape_next:
+                    escape_next = False
+                    continue
+                if char == '\':
+                    escape_next = True
+                    continue
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if char == '{':
+                    depth += 1
+                elif char == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end_idx = i
+                        break
+            
             if end_idx != -1:
                 json_str = json_str[:end_idx + 1]
             
