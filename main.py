@@ -16,6 +16,7 @@ from utils import (
     load_classes, 
     ensure_dirs
 )
+from dashboard_generator import generate_dashboard
 from schemas import DialogAnalysis, DialogMetadata, ClassificationResult, TokenCounts
 
 
@@ -175,6 +176,11 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None, skip_llm: b
     print(f"  - {dialogs_csv_path}")
     print(f"  - {use_cases_csv_path}")
     print(f"  - {analytics_csv_path}")
+    
+    print("\n[7/7] Генерация Dashboard...")
+    report_path = outputs_dir / "report.html"
+    generate_dashboard(analytics_csv_path, report_path)
+    print(f"  - {report_path}")
     
     print(f"\nСтатистика:")
     print(f"  - Диалогов обработано: {len(analyses)}")
