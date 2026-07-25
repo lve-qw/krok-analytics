@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+.pytest_cache/
+models/
+
+# Локальные выгрузки данных, которые не должны попадать в репозиторий.
+/analytics.csv
+/dialogs.csv
+/use_cases.csv
+outputs/*.json
+outputs/analytics.*.csv
+outputs/errors*.csv
+outputs/pipeline_errors.csv
+outputs/validation/
+/temp-data-transfer-main/
+/A.
