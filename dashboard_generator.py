@@ -131,6 +131,8 @@ def generate_dashboard(analytics_csv: Path, output_html: Path = None):
     # ===== Генерируем HTML с графиками =====
     print(f"Генерация dashboard...")
     
+    output_path = Path(output_html)
+    
     html_content = f"""
 <!DOCTYPE html>
 <html lang="ru">
