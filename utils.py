@@ -11,6 +11,8 @@ def save_dialogs_csv(analyses: List[DialogAnalysis], output_path: Path):
         row = {
             "request_id": a.request_id,
             "dialog_id": a.dialog_id,
+            "user_id": a.user_id,
+            "created_at": a.created_at,
             "first_user_message": a.first_user_message,
             "summary": a.metadata.summary,
             "goal": a.metadata.goal,

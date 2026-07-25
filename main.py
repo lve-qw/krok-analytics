@@ -74,6 +74,8 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
         analysis = DialogAnalysis(
             request_id=dialog.id,
             dialog_id=dialog.id,
+            user_id=dialog.user_id,
+            created_at=dialog.created_at,
             first_user_message=first_msg,
             metadata=metadata,
             classification=classification,

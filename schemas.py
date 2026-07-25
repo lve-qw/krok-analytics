@@ -5,19 +5,47 @@ from datetime import datetime
 
 class Message(BaseModel):
     role: str
-    content: str
+    content: str = ""
     timestamp: Optional[str] = None
+    tool_name: Optional[str] = None
+    arguments: Optional[dict] = None
+    result: Optional[dict] = None
 
 
 class Dialog(BaseModel):
-    id: int
-    scenario_id: str
-    scenario_title: str
-    scenario_description: str
+    user_id: str = ""
+    session_id: str = ""
     created_at: str
-    total_tokens: int
-    message_count: int
+    scenario: str = ""
     messages: List[Message]
+    
+    @property
+    def id(self) -> int:
+        # Извлекаем ID из session_id (sess_20260725_000032 -> 32)
+        try:
+            return int(self.session_id.split("_")[-1])
+        except:
+            return 0
+    
+    @property
+    def scenario_id(self) -> str:
+        return self.scenario.replace(" ", "_").lower()[:50]
+    
+    @property
+    def scenario_title(self) -> str:
+        return self.scenario
+    
+    @property
+    def scenario_description(self) -> str:
+        return self.scenario
+    
+    @property
+    def total_tokens(self) -> int:
+        return sum(len(m.content) for m in self.messages)
+    
+    @property
+    def message_count(self) -> int:
+        return len(self.messages)
 
 
 class DialogMetadata(BaseModel):
@@ -62,6 +90,8 @@ class TokenCounts(BaseModel):
 class DialogAnalysis(BaseModel):
     request_id: int
     dialog_id: int
+    user_id: str = ""
+    created_at: str = ""
     first_user_message: str
     metadata: DialogMetadata
     classification: ClassificationResult

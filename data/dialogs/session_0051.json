@@ -1,0 +1,66 @@
+{
+  "user_id": "usr_000027",
+  "session_id": "sess_20260725_000051",
+  "created_at": "2026-07-25T15:24:00Z",
+  "scenario": "Экспорт данных в Excel",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T15:24:00Z",
+      "content": "Нужно выгрузить отчет по поставщики в формате Excel."
+    },
+    {
+      "role": "assistant",
+      "content": "Выгружаю данные в таблицу."
+    },
+    {
+      "role": "tool",
+      "tool_name": "crm.get_company",
+      "arguments": {
+        "id": "ISUP-5693"
+      },
+      "result": {
+        "name": "Лукойл",
+        "director": "Попов Д.К.",
+        "industry": "IT",
+        "employees": 34166,
+        "website": "https://example.com",
+        "revenue": 667163227
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "excel.export",
+      "arguments": {
+        "id": "1243"
+      },
+      "result": {
+        "filename": "report_20260725_55.xlsx",
+        "rows": 7676,
+        "columns": 18,
+        "size_kb": 7323,
+        "sheets": 5
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "excel.create",
+      "arguments": {
+        "data": "Нужно выгрузить отчет по поставщики в формате Exce",
+        "recipient": "kozlov@company.com"
+      },
+      "result": {
+        "filename": "report_20260725_82.xlsx",
+        "rows": 3490,
+        "columns": 7,
+        "size_kb": 7602,
+        "sheets": 4
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T15:25:45Z",
+      "content": "Экспорт готов: report_20260725_55.xlsx."
+    }
+  ]
+}

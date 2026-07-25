@@ -1,0 +1,71 @@
+{
+  "user_id": "usr_000047",
+  "session_id": "sess_20260725_000037",
+  "created_at": "2026-07-25T13:52:00Z",
+  "scenario": "Анализ веб-источников",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T13:52:00Z",
+      "content": "Посмотри обзоры на Analytics Suite и выдели главное."
+    },
+    {
+      "role": "assistant",
+      "content": "По ищу информацию в интернете."
+    },
+    {
+      "role": "tool",
+      "tool_name": "web.search",
+      "arguments": {
+        "query": "Посмотри обзоры на Analytics Suite и выдели главное...."
+      },
+      "result": {
+        "summary": "Найдена информация по запросу. Последние обновления: обновление документации.",
+        "sources": 24,
+        "top_url": "https://example.com/news",
+        "sentiment": "neutral"
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "web.fetch_url",
+      "arguments": {
+        "id": "5823"
+      },
+      "result": {
+        "summary": "Найдена информация по запросу. Последние обновления: релиз 2.1.",
+        "sources": 25,
+        "top_url": "https://example.com/news",
+        "sentiment": "mixed"
+      }
+    },
+    {
+      "role": "tool",
+      "tool_name": "web.summarize",
+      "arguments": {
+        "id": "4178"
+      },
+      "result": {
+        "summary": "Найдена информация по запросу. Последние обновления: релиз 2.1.",
+        "sources": 10,
+        "top_url": "https://example.com/news",
+        "sentiment": "neutral"
+      }
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T13:55:13Z",
+      "content": "Саммари готово."
+    },
+    {
+      "role": "user",
+      "timestamp": "2026-07-25T13:55:00Z",
+      "content": "Отлично, сохрани это в заметки."
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-07-25T13:58:00Z",
+      "content": "Данные отправлены."
+    }
+  ]
+}
