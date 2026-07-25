@@ -111,7 +111,7 @@ class LLMAnalyzer:
                 if escape_next:
                     escape_next = False
                     continue
-                if char == '\':
+                if char == '\\':
                     escape_next = True
                     continue
                 if char == '"' and not escape_next:

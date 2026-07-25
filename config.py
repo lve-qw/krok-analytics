@@ -6,7 +6,7 @@ from typing import List
 @dataclass
 class ModelConfig:
     llm_model: str = "Qwen/Qwen2.5-7B-Instruct"
-    zero_shot_model: str = "blanchefort/rubert-base-mnli"
+    zero_shot_model: str = "cointegrated/rubert-tiny-bilingual-nli"
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     device: str = "auto"
     max_tokens: int = 2048
