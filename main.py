@@ -63,8 +63,13 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
         dialog_text = parser.get_dialog_text(dialog)
         
         metadata = llm_analyzer.analyze_dialog(dialog)
-        classification = classifier.classify(dialog_text)
+        # Классифицируем только первое сообщение пользователя (не весь диалог)
+        classification = classifier.classify(first_msg)
         token_counts = token_counter.count_messages(dialog.messages)
+        
+        # Определяем статус анализа
+        analysis_status = "parse_error" if metadata.failure_reason == "LLM parse error" else "success"
+        metadata_confidence = 0.0 if analysis_status == "parse_error" else 1.0
         
         analysis = DialogAnalysis(
             request_id=dialog.id,
@@ -73,7 +78,9 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
             metadata=metadata,
             classification=classification,
             token_counts=token_counts,
-            class_labels=classification.class_names
+            class_labels=classification.class_names,
+            analysis_status=analysis_status,
+            metadata_confidence=metadata_confidence
         )
         analyses.append(analysis)
     
@@ -85,7 +92,8 @@ def run_pipeline(dialogs_dir: Path = None, outputs_dir: Path = None):
     embeddings = embedder.embed_batch(messages, show_progress=True)
     
     clusterer = DialogClusterer(llm_analyzer)
-    clusters, use_cases = clusterer.process_clusters(embeddings, messages)
+    request_ids = [a.request_id for a in analyses]
+    clusters, use_cases = clusterer.process_clusters(embeddings, messages, request_ids)
     
     print(f"Найдено {len(clusters)} кластеров")
     for cid, indices in sorted(clusters.items()):

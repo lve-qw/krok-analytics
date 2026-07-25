@@ -184,8 +184,8 @@ class LLMAnalyzer:
             search_type=[],
             contains_sensitive_data=False,
             prompt_injection=False,
-            agent_failed=False,
-            failure_reason=None,
+            agent_failed=True,
+            failure_reason="LLM parse error",
             language="ru"
         )
 

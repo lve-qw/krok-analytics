@@ -67,6 +67,8 @@ class DialogAnalysis(BaseModel):
     classification: ClassificationResult
     token_counts: TokenCounts
     class_labels: List[str] = Field(default_factory=list)
+    analysis_status: str = "success"  # "success" | "parse_error"
+    metadata_confidence: float = 1.0
 
 
 class ClusterInfo(BaseModel):

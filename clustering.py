@@ -36,9 +36,11 @@ class DialogClusterer:
                     clusters[label] = []
                 clusters[label].append(idx)
         
-        if noise_indices:
-            max_id = max(clusters.keys()) + 1 if clusters else 0
-            clusters[max_id] = noise_indices
+        # Оставляем выбросы с cluster_id = -1 (не объединяем в один кластер)
+        for idx in noise_indices:
+            if -1 not in clusters:
+                clusters[-1] = []
+            clusters[-1].append(idx)
         
         return clusters
 
@@ -130,7 +132,8 @@ class DialogClusterer:
     def process_clusters(
         self, 
         embeddings: np.ndarray, 
-        messages: List[str]
+        messages: List[str],
+        request_ids: List[int]
     ) -> Tuple[Dict[int, List[int]], List[UseCase]]:
         clusters = self.cluster(embeddings)
         use_cases = []
@@ -141,7 +144,7 @@ class DialogClusterer:
             
             for idx in indices:
                 use_cases.append(UseCase(
-                    request_id=idx,
+                    request_id=request_ids[idx],
                     cluster_id=cluster_id,
                     use_case=use_case_name,
                     member_count=len(indices)

@@ -42,6 +42,8 @@ def save_dialogs_csv(analyses: List[DialogAnalysis], output_path: Path):
             "tool_tokens": a.token_counts.tool_tokens,
             "total_tokens": a.token_counts.total_tokens,
             "estimated_cost": a.token_counts.estimated_cost,
+            "analysis_status": a.analysis_status,
+            "metadata_confidence": a.metadata_confidence,
         }
         rows.append(row)
     
