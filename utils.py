@@ -80,12 +80,28 @@ def save_analytics_csv(dialogs_path: Path, use_cases_path: Path, output_path: Pa
 
 
 def load_classes(classes_path: Path) -> List[tuple]:
-    classes = []
+    """Load the canonical taxonomy as a list of (class_id, class_name).
+
+    The canonical file is `data/classes_31.csv` with columns `class_id`,
+    `class_name` and `description`. `class_id` is a string, matching the
+    analytics.csv contract.
+
+    The legacy `data/classes.csv` (columns `id` / `название_класса`, 10 broad
+    categories) is still readable so old outputs can be reproduced, but it is
+    not a canonical taxonomy: its integer ids are not valid `class_id` values.
+    """
+
     with open(classes_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            classes.append((int(row["id"]), row["название_класса"]))
-    return classes
+        fieldnames = reader.fieldnames or []
+        if "class_id" in fieldnames and "class_name" in fieldnames:
+            return [(row["class_id"].strip(), row["class_name"].strip()) for row in reader]
+        if "id" in fieldnames and "название_класса" in fieldnames:
+            return [(str(row["id"]).strip(), row["название_класса"].strip()) for row in reader]
+        raise ValueError(
+            f"{classes_path}: expected columns 'class_id'/'class_name' "
+            f"(canonical) or 'id'/'название_класса' (legacy), got {fieldnames}"
+        )
 
 
 def ensure_dirs(paths):

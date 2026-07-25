@@ -9,3 +9,8 @@ numpy>=1.24.0
 tiktoken>=0.5.0
 pydantic>=2.0.0
 tqdm>=4.65.0
+
+# Dashboard only. The validator and the adapter use the standard library plus
+# pandas, so they run without these.
+dash>=3.0.0
+plotly>=6.0.0

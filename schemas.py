@@ -45,7 +45,9 @@ class DialogMetadata(BaseModel):
 
 
 class ClassificationResult(BaseModel):
-    class_ids: List[int] = Field(default_factory=list)
+    # String ids from the canonical 31-class taxonomy (data/classes_31.csv),
+    # matching the analytics.csv contract.
+    class_ids: List[str] = Field(default_factory=list)
     class_names: List[str] = Field(default_factory=list)
     scores: List[float] = Field(default_factory=list)
     confidence: float = Field(default=0.0)

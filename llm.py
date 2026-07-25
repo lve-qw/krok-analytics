@@ -5,6 +5,39 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from schemas import Dialog, DialogMetadata
 from prompts import ANALYZE_DIALOG_PROMPT
 from config import config
+from analytics_contract.registry import load_project_registries
+
+
+def _build_normalizers():
+    """Bind the FIXED_TOOLS / FIXED_INTEGRATIONS registries to normalizers.
+
+    These vocabularies were declared in config.py but never applied, so tool
+    and integration names arrived as free text and fragmented into synonyms.
+    Unknown names are dropped here and reported by analytics_export, never
+    passed through silently.
+    """
+
+    loaded = load_project_registries()
+    if loaded is None:
+        return (lambda values: values), (lambda values: values)
+    tools_vocab, integrations_vocab = loaded
+
+    def make(vocabulary):
+        def normalize(values):
+            seen, result = set(), []
+            for value in values:
+                canonical = vocabulary.normalize(value)
+                if canonical is not None and canonical not in seen:
+                    seen.add(canonical)
+                    result.append(canonical)
+            return result
+
+        return normalize
+
+    return make(tools_vocab), make(integrations_vocab)
+
+
+normalize_tools, normalize_integrations = _build_normalizers()
 
 
 class LLMAnalyzer:
@@ -130,10 +163,17 @@ class LLMAnalyzer:
             def ensure_list(val):
                 return val if isinstance(val, list) else []
             
-            integrations = ensure_list(data.get("integrations", []))
-            tools = ensure_list(data.get("tools", []))
+            integrations = normalize_integrations(ensure_list(data.get("integrations", [])))
+            tools = normalize_tools(ensure_list(data.get("tools", [])))
             company_sources = ensure_list(data.get("company_sources", []))
-            requires_generation = ensure_list(data.get("requires_generation", []))
+
+            # Closed vocabulary, same treatment as search_type below. Without
+            # this filter the LLM emits values such as "pdf" that the contract
+            # does not express.
+            raw_generation = ensure_list(data.get("requires_generation", []))
+            requires_generation = [
+                g for g in raw_generation if g in ("text", "excel", "sql", "presentation")
+            ]
             
             # Нормализация search_type (только "internet" или "internal")
             raw_search = ensure_list(data.get("search_type", []))

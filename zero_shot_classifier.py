@@ -6,7 +6,7 @@ from config import config
 
 
 class ZeroShotClassifier:
-    def __init__(self, classes: List[Tuple[int, str]]):
+    def __init__(self, classes: List[Tuple[str, str]]):
         self.model_name = config.models.zero_shot_model
         self.device = self._get_device()
         self.classes = classes
@@ -51,9 +51,18 @@ class ZeroShotClassifier:
                 scores.append(score)
 
         if not class_ids:
-            class_ids = [0]
-            class_names_filtered = [config.classification.default_class]
-            scores = [1.0]
+            # Nothing cleared the threshold. Fall back to the single best label
+            # and report its ACTUAL score. The previous behaviour assigned a
+            # synthetic confidence of 1.0 here, which made the least certain
+            # rows look like the most certain ones and inverted every
+            # confidence metric downstream.
+            best_index = max(
+                range(len(result["scores"])), key=lambda i: result["scores"][i]
+            )
+            best_label = result["labels"][best_index]
+            class_ids = [self.class_map[best_label]]
+            class_names_filtered = [best_label]
+            scores = [float(result["scores"][best_index])]
 
         max_score = max(scores) if scores else 0.0
 

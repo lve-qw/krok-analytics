@@ -34,7 +34,8 @@ class PathsConfig:
     outputs_dir: Path = field(default=None)
     models_dir: Path = field(default=None)
     classes_file: Path = field(default=None)
-    
+    legacy_classes_file: Path = field(default=None)
+
     def __post_init__(self):
         if self.data_dir is None:
             self.data_dir = self.base_dir / "data"
@@ -45,7 +46,12 @@ class PathsConfig:
         if self.models_dir is None:
             self.models_dir = self.base_dir / "models"
         if self.classes_file is None:
-            self.classes_file = self.data_dir / "classes.csv"
+            # Canonical taxonomy: the 31 official classes.
+            self.classes_file = self.data_dir / "classes_31.csv"
+        if self.legacy_classes_file is None:
+            # The 10 broad categories. Kept for reference and comparison only;
+            # they are not a canonical taxonomy.
+            self.legacy_classes_file = self.data_dir / "classes.csv"
 
 
 @dataclass
