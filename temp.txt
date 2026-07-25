@@ -1,0 +1,27 @@
+Ветка: feat/dashboard-redesign
+Последний коммит: 69c4b41 — chore(dashboard): заполнить выгрузку синтетикой и описать условия запуска
+
+Что в нём:
+- scripts/fill_synthetic.py — дозаполняет пустые поля выгрузки (useful/useless_messages,
+  burned_tokens, флаги рисков, периодичность, язык) по фиксированному seed;
+  измеренные поля (токены, время, id) не трогает
+- outputs/analytics.csv, outputs/dialogs.csv, outputs/use_cases.csv перегенерены
+- run_dashboard.sh говорит, что ему нужно для запуска
+
+Запуск дашборда:
+  python3 -m venv .venv && .venv/bin/pip install -r requirements-dashboard.txt
+  ./run_dashboard.sh            -> http://127.0.0.1:8050
+
+Что должно лежать на диске:
+  outputs/analytics.csv
+  либо outputs/dialogs.csv + outputs/use_cases.csv
+
+Метрики текстом без браузера:
+  .venv/bin/python -m dashboard.check --input outputs
+
+Перезаполнить синтетику:
+  .venv/bin/python scripts/fill_synthetic.py
+
+Предыдущие коммиты ветки:
+  059dab9 — блок «Окупается ли»: порог безубыточности и FTE
+  b73ae80 — приборная консоль вместо белых плиток
