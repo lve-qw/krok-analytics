@@ -19,16 +19,24 @@ class MessageClassifier:
                 config.models.llm_model,
                 cache_dir=str(config.paths.models_dir)
             )
+            # Оптимизации памяти:
+            # 1. torch_dtype=torch.float16 для экономии памяти
+            # 2. device_map="auto" для автоматического распределения
+            # 3. low_cpu_mem_usage=True для экономии CPU памяти
             self.model = AutoModelForCausalLM.from_pretrained(
                 config.models.llm_model,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                device_map="auto" if device == "cuda" else None,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                low_cpu_mem_usage=True,
                 cache_dir=str(config.paths.models_dir)
             )
-            if device and device != "cuda":
-                self.model = self.model.to(device)
-            self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
             print("Message classifier loaded successfully")
+        
+        # Очищаем кэш CUDA перед началом работы
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+            print(f"GPU memory after loading: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
     def _format_dialog(self, dialog: Dialog) -> str:
         """Форматируем диалог для промпта."""
@@ -49,22 +57,39 @@ class MessageClassifier:
         dialog_text = self._format_dialog(dialog)
         prompt = CLASSIFY_MESSAGES_PROMPT.format(dialog_text=dialog_text)
         
+        # Очищаем кэш CUDA перед каждой классификацией
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        
         try:
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+            
+            # Проверяем длину промпта
+            prompt_length = inputs.input_ids.shape[1]
+            if prompt_length > 4000:
+                print(f"Warning: Long prompt ({prompt_length} tokens), truncating...")
+                inputs.input_ids = inputs.input_ids[:, :4000]
+                inputs.attention_mask = inputs.attention_mask[:, :4000]
             
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=500,
+                    max_new_tokens=300,  # Уменьшено с 500
                     temperature=0.1,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id
+                    do_sample=False,  # Убран do_sample для экономии памяти
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    use_cache=True  # Включаем кэширование для скорости
                 )
             
             generated = self.tokenizer.decode(
                 outputs[0][inputs.input_ids.shape[1]:], 
                 skip_special_tokens=True
             ).strip()
+            
+            # Освобождаем память
+            del outputs, inputs
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             
             # Парсим JSON из ответа
             classifications = self._parse_response(generated, dialog.messages)
@@ -97,6 +122,8 @@ class MessageClassifier:
             
         except Exception as e:
             print(f"Error classifying messages: {e}")
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             return MessageClassificationResult(
                 messages=[],
                 burned_tokens=0,
