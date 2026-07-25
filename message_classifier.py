@@ -106,7 +106,7 @@ class MessageClassifier:
             )
 
     def _parse_response(self, response: str, messages: List) -> List[MessageClassification]:
-        """Парсит JSON ответ от модели."""
+        """Парсит JSON ответ от модели с валидацией и нормализацией."""
         classifications = []
         
         # Очищаем ответ от markdown
@@ -116,17 +116,10 @@ class MessageClassifier:
             if response.startswith("json"):
                 response = response[3:].strip()
         
+        # Пробуем распарсить JSON
+        data = None
         try:
             data = json.loads(response)
-            if isinstance(data, list):
-                for item in data:
-                    if "message_index" in item and "is_useful" in item:
-                        classifications.append(MessageClassification(
-                            message_index=item.get("message_index", 0),
-                            role=item.get("role", "assistant"),
-                            is_useful=item.get("is_useful", True),
-                            reason=item.get("reason", "other")
-                        ))
         except json.JSONDecodeError:
             # Пробуем найти JSON в тексте
             import re
@@ -134,19 +127,77 @@ class MessageClassifier:
             if json_match:
                 try:
                     data = json.loads(json_match.group())
-                    for item in data:
-                        if "message_index" in item and "is_useful" in item:
-                            classifications.append(MessageClassification(
-                                message_index=item.get("message_index", 0),
-                                role=item.get("role", "assistant"),
-                                is_useful=item.get("is_useful", True),
-                                reason=item.get("reason", "other")
-                            ))
                 except:
                     pass
         
-        # Если не распарсилось, возвращаем пустой список
+        if not data or not isinstance(data, list):
+            print(f"Warning: Invalid JSON response from LLM: {response[:200]}...")
+            return classifications
+        
+        # Валидируем и нормализуем каждое сообщение
+        for i, item in enumerate(data):
+            if not isinstance(item, dict):
+                continue
+            
+            # message_index: должен быть int
+            msg_idx = item.get("message_index")
+            if msg_idx is None or not isinstance(msg_idx, (int, float, str)):
+                continue
+            try:
+                msg_idx = int(msg_idx)
+            except (ValueError, TypeError):
+                continue
+            
+            # is_useful: нормализуем (true/false, 1/0, "true"/"false")
+            is_useful_raw = item.get("is_useful")
+            is_useful = self._normalize_boolean(is_useful_raw)
+            
+            # role: должен быть "assistant" или "tool"
+            role = item.get("role", "assistant")
+            if role not in ["assistant", "tool"]:
+                role = "assistant"
+            
+            # reason: валидируем
+            reason = item.get("reason", "other")
+            valid_reasons = ["correct_execution", "tool_error", "wrong_tool_call", 
+                           "partial_result", "repetition", "off_topic", "self_analysis", "other"]
+            if reason not in valid_reasons:
+                reason = "other"
+            
+            classifications.append(MessageClassification(
+                message_index=msg_idx,
+                role=role,
+                is_useful=is_useful,
+                reason=reason
+            ))
+        
         return classifications
+
+    def _normalize_boolean(self, value) -> bool:
+        """Нормализует значение в boolean."""
+        if value is None:
+            return True  # По умолчанию полезное
+        
+        if isinstance(value, bool):
+            return value
+        
+        if isinstance(value, (int, float)):
+            # 0, 0.0 → False; 1, 1.0 → True
+            return bool(value)
+        
+        if isinstance(value, str):
+            value = value.lower().strip()
+            if value in ["true", "1", "yes", "да", "полезное", "useful"]:
+                return True
+            if value in ["false", "0", "no", "нет", "бесполезное", "useless"]:
+                return False
+            # Пробуем распарсить как число
+            try:
+                return bool(float(value))
+            except:
+                return True
+        
+        return bool(value)
 
     def _count_tokens(self, text: str) -> int:
         """Считает токены в тексте."""
